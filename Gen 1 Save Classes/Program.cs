@@ -11,12 +11,12 @@ namespace Gen_1_Save_Classes
             PokemonNames = File.ReadAllLines("Gen1 Pokemon Names.txt");
 
 
-            Gen1SaveFile PKMNBLUE = new Gen1SaveFile("POKEMON BLUE.sav");
-            Gen1SaveFile PKMNRED = new Gen1SaveFile("POKEMON RED.sav");
+            //Gen1SaveFile PKMNBLUE = new Gen1SaveFile("POKEMON BLUE.sav");
+            //Gen1SaveFile PKMNRED = new Gen1SaveFile("POKEMON RED.sav");
 
 
 
-            byte[] PokemonOwned = File.ReadAllBytes(@"C:\Users\User\source\repos\arduinogdump-communicator\GBCartRead-Communicator\bin\Debug\RBYPokedex.dat");
+            byte[] PokemonOwned = File.ReadAllBytes(@"..\..\..\..\Onix Gameboy Cartridge Reader\bin\Debug\RBYPokedex.dat");
 
 
             ShowPokemonList(PokemonOwned);
@@ -54,6 +54,8 @@ namespace Gen_1_Save_Classes
             File.WriteAllBytes("POKEMON BLUE test.sav", PKMNBLUE.Data);
 
             Console.WriteLine("Done.");//*/
+
+            Console.ReadLine();
 
         }
 

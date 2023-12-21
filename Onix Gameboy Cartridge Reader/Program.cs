@@ -19,183 +19,221 @@ public class PortChat
 
     public static void Main()
     {
+        bool exitFlag = false;
+
         string name;
         string message;
         StringComparer stringComparer = StringComparer.OrdinalIgnoreCase;
-        Thread readThread = new Thread(Read);
+        Thread readThread = default;
 
-        Console.CancelKeyPress += new ConsoleCancelEventHandler( CancelOperationHandler);
-
-        if(File.Exists(RBYPokedexFile))
-            RBYPokedex = File.ReadAllBytes(RBYPokedexFile);
-
-        // Create a new SerialPort object with default settings.
-        _serialPort = new SerialPort();
-
-        // Allow the user to set the appropriate properties.
-        _serialPort.PortName = "COM5";// SetPortName(_serialPort.PortName);
-        _serialPort.BaudRate = 115200; // SetPortBaudRate(_serialPort.BaudRate);
-        _serialPort.Parity = Parity.None; //SetPortParity(_serialPort.Parity);
-        _serialPort.DataBits = 8;// SetPortDataBits(_serialPort.DataBits);
-        _serialPort.StopBits = StopBits.One;// SetPortStopBits(_serialPort.StopBits);
-        _serialPort.Handshake = Handshake.None;// SetPortHandshake(_serialPort.Handshake);
-
-        // Set the read/write timeouts
-        _serialPort.ReadTimeout = 500;
-        _serialPort.WriteTimeout = 500;
-
-        //_serialPort.ReadBufferSize
-
-        _serialPort.Open();
-        _continue = true;
-        readThread.Start();
-
-        name = "Self";
-
-        Console.WriteLine("Type QUIT to exit");
-
-        while (_continue)
-        {
-            if (_suspendConsole)
+        while (!exitFlag)
+            try
             {
-                Thread.Sleep(1);
-            }
-            else
-            {
-                message = Console.ReadLine();
+                readThread = new Thread(Read);
+                Console.CancelKeyPress += new ConsoleCancelEventHandler(CancelOperationHandler);
 
+                if (File.Exists(RBYPokedexFile))
+                    RBYPokedex = File.ReadAllBytes(RBYPokedexFile);
 
-                if (message.ToLower().StartsWith("x"))
-                {
-                    byte[] byteOut = new byte[] { byte.Parse(message.Substring(1), System.Globalization.NumberStyles.HexNumber) };
+                // Create a new SerialPort object with default settings.
+                _serialPort = new SerialPort();
 
-                    _serialPort.Write(byteOut, 0, 1);
-                }
-                else if (stringComparer.Equals("head", message))
-                {
-                    _serialPort.Write(new byte[] { 0x03, 0xFF }, 0, 1);
-                }
-                else if (stringComparer.Equals("title", message) || stringComparer.Equals("t", message))
-                {
-                    lock (dataLock)
-                        _suspendConsole = true;
+                string selectedPort = "";
 
-                    byte[] header = GetBytes(0x0000, 0x0200, false);
+                while (selectedPort.Equals(""))
+                {
+                    Console.Clear();
+                    Console.WriteLine("Choose a Serial Port:\r\n");
 
-                    string ROMName = System.Text.Encoding.ASCII.GetString(header, 0x134, 0x0F);
-                    if (ROMName.Contains("\0")) ROMName = ROMName.Substring(0, ROMName.IndexOf("\0"));
+                    string[] ports = SerialPort.GetPortNames();
+                    Array.Sort(ports);
 
-                    Console.WriteLine("{0}\r\n", ROMName);
+                    foreach (string s in ports)
+                        Console.WriteLine("   {0}", s);
 
-                    lock (dataLock)
-                        _suspendConsole = false;
-                }
-                else if (stringComparer.Equals("readbank", message))
-                {
-                    ReadCommand(0x4000, 0x50, false);
-                }
-                else if (stringComparer.Equals("read", message))
-                {
-                    ReadCommand(0x0100, 0x50, false);
-                }
-                else if (stringComparer.Equals("write", message))
-                {
-                    WriteCommand(0x2100, 0x06, false);
-                }
-                else if (stringComparer.Equals("reset", message))
-                {
-                    WriteCommand(0x2100, 0x00, false);
-                }
-                else if (message.ToLower().StartsWith("dumprom"))
-                {
-                    bool fail = false;
-                    string[] messageList = message.Split(' ');
-                    int banks = 0;
-                    if (messageList.Length > 3)
-                        if (!int.TryParse(messageList[3], out banks))
+                    string res = Console.ReadLine();
+
+                    foreach (string s in ports)
+                        if (res.ToLower().Contains(s.ToLower()))
                         {
-                            Console.WriteLine("\r\ndumprom\r\n\r\n\tUsage: dumprom [Text to Append to filename] [filename] [Number of banks to read]\r\n\r\n\tWhen run without parameters, dumprom will attempt to get the cartridge's name\r\n\t\tand number of banks from the ROM header\r\n\tTo omit certain parameter, simply add extra spaces as if they were there. Examples:\r\n\r\n\t\t> dumprom  MyRom - Outputs MyRom.gb\r\n\t\t> dumprom _32_Banks   32 - Outputs the first 32 banks of the ROM to [ROM Title]_32_Banks.gb");
-                            fail = true;
+                            selectedPort = s;
+                            break;
                         }
-
-                    if (!fail)
-                        DumpROMToFile(messageList.Length > 1 ? messageList[1] : "", messageList.Length > 2 ? messageList[2] : "", banks);
                 }
-                else if (stringComparer.Equals("dumpram", message))
+
+
+                // Allow the user to set the appropriate properties.
+                _serialPort.PortName = selectedPort;// SetPortName(_serialPort.PortName);
+                _serialPort.BaudRate = 115200; // SetPortBaudRate(_serialPort.BaudRate);
+                _serialPort.Parity = Parity.None; //SetPortParity(_serialPort.Parity);
+                _serialPort.DataBits = 8;// SetPortDataBits(_serialPort.DataBits);
+                _serialPort.StopBits = StopBits.One;// SetPortStopBits(_serialPort.StopBits);
+                _serialPort.Handshake = Handshake.None;// SetPortHandshake(_serialPort.Handshake);
+
+                // Set the read/write timeouts
+                _serialPort.ReadTimeout = 500;
+                _serialPort.WriteTimeout = 500;
+
+                //_serialPort.ReadBufferSize
+
+                _serialPort.Open();
+                _continue = true;
+                readThread.Start();
+
+                name = "Self";
+
+                Console.WriteLine("Enter QUIT or Q to exit");
+
+                while (_continue)
                 {
-                    DumpRAMToFile();
-                }
-                else if (stringComparer.Equals("fulldump", message))
-                {
-                    DumpROMToFile();
-                    DumpRAMToFile();
-                }
-                else if (stringComparer.Equals("writeram", message))
-                {
-
-                    lock (dataLock)
-                        _suspendConsole = true;
-
-                    byte[] header = GetBytes(0x0000, 0x0200, false);
-
-                    string ROMName = System.Text.Encoding.ASCII.GetString(header, 0x134, 0x0F);
-                    if (ROMName.Contains("\0")) ROMName = ROMName.Substring(0, ROMName.IndexOf("\0"));
-
-                    int RAMBankSize = 8, RAMBanks = 1;
-
-                    switch (header[0x149])
+                    if (_suspendConsole)
                     {
-                        case 0x00:
-                            RAMBankSize = RAMBanks = 0;
-                            break;
-
-                        case 0x01:
-                            RAMBankSize = 2;
-                            break;
-
-                        case 0x03:
-                            RAMBanks = 4;
-                            break;
-
-                        case 0x04:
-                            RAMBanks = 16;
-                            break;
-
-                        case 0x05:
-                            RAMBanks = 8;
-                            break;
+                        Thread.Sleep(1);
                     }
+                    else
+                    {
+                        message = Console.ReadLine();
 
-                    WriteRAMFromFile(ROMName + ".sav");
 
-                    lock (dataLock)
-                        _suspendConsole = false;
-                }
-                else if (message.StartsWith("writeram "))
-                {
-                    string[] args = message.Split(' ');
+                        if (message.ToLower().StartsWith("x"))
+                        {
+                            byte[] byteOut = new byte[] { byte.Parse(message.Substring(1), System.Globalization.NumberStyles.HexNumber) };
 
-                    if (args.Length > 1)
-                        WriteRAMFromFile(args[1]);
-                }
-                else if (stringComparer.Equals("mergerbydex", message) || stringComparer.Equals("mrby", message))
-                {
-                    MergePokedexRBY();
-                }
-                else if (stringComparer.Equals("quit", message) || stringComparer.Equals("q", message))
-                {
-                    _continue = false;
-                }
-                else if (stringComparer.Equals("tp", message))
-                    TestProgressBar();
-                else
-                {
-                    _serialPort.WriteLine(
-                        String.Format("<{0}>: {1}", name, message)
-                        );
+                            _serialPort.Write(byteOut, 0, 1);
+                        }
+                        else if (stringComparer.Equals("head", message))
+                        {
+                            _serialPort.Write(new byte[] { 0x03, 0xFF }, 0, 1);
+                        }
+                        else if (stringComparer.Equals("title", message) || stringComparer.Equals("t", message))
+                        {
+                            lock (dataLock)
+                                _suspendConsole = true;
+
+                            byte[] header = GetBytes(0x0000, 0x0200, false);
+
+                            string ROMName = System.Text.Encoding.ASCII.GetString(header, 0x134, 0x0F);
+                            if (ROMName.Contains("\0")) ROMName = ROMName.Substring(0, ROMName.IndexOf("\0"));
+
+                            Console.WriteLine("{0}\r\n", ROMName);
+
+                            lock (dataLock)
+                                _suspendConsole = false;
+                        }
+                        else if (stringComparer.Equals("readbank", message))
+                        {
+                            ReadCommand(0x4000, 0x50, false);
+                        }
+                        else if (stringComparer.Equals("read", message))
+                        {
+                            ReadCommand(0x0100, 0x50, false);
+                        }
+                        else if (stringComparer.Equals("write", message))
+                        {
+                            WriteCommand(0x2100, 0x06, false);
+                        }
+                        else if (stringComparer.Equals("reset", message))
+                        {
+                            WriteCommand(0x2100, 0x00, false);
+                        }
+                        else if (message.ToLower().StartsWith("dumprom"))
+                        {
+                            bool fail = false;
+                            string[] messageList = message.Split(' ');
+                            int banks = 0;
+                            if (messageList.Length > 3)
+                                if (!int.TryParse(messageList[3], out banks))
+                                {
+                                    Console.WriteLine("\r\ndumprom\r\n\r\n\tUsage: dumprom [Text to Append to filename] [filename] [Number of banks to read]\r\n\r\n\tWhen run without parameters, dumprom will attempt to get the cartridge's name\r\n\t\tand number of banks from the ROM header\r\n\tTo omit certain parameter, simply add extra spaces as if they were there. Examples:\r\n\r\n\t\t> dumprom  MyRom - Outputs MyRom.gb\r\n\t\t> dumprom _32_Banks   32 - Outputs the first 32 banks of the ROM to [ROM Title]_32_Banks.gb");
+                                    fail = true;
+                                }
+
+                            if (!fail)
+                                DumpROMToFile(messageList.Length > 1 ? messageList[1] : "", messageList.Length > 2 ? messageList[2] : "", banks);
+                        }
+                        else if (stringComparer.Equals("dumpram", message))
+                        {
+                            DumpRAMToFile();
+                        }
+                        else if (stringComparer.Equals("fulldump", message))
+                        {
+                            DumpROMToFile();
+                            DumpRAMToFile();
+                        }
+                        else if (stringComparer.Equals("writeram", message))
+                        {
+
+                            lock (dataLock)
+                                _suspendConsole = true;
+
+                            byte[] header = GetBytes(0x0000, 0x0200, false);
+
+                            string ROMName = System.Text.Encoding.ASCII.GetString(header, 0x134, 0x0F);
+                            if (ROMName.Contains("\0")) ROMName = ROMName.Substring(0, ROMName.IndexOf("\0"));
+
+                            int RAMBankSize = 8, RAMBanks = 1;
+
+                            switch (header[0x149])
+                            {
+                                case 0x00:
+                                    RAMBankSize = RAMBanks = 0;
+                                    break;
+
+                                case 0x01:
+                                    RAMBankSize = 2;
+                                    break;
+
+                                case 0x03:
+                                    RAMBanks = 4;
+                                    break;
+
+                                case 0x04:
+                                    RAMBanks = 16;
+                                    break;
+
+                                case 0x05:
+                                    RAMBanks = 8;
+                                    break;
+                            }
+
+                            WriteRAMFromFile(ROMName + ".sav");
+
+                            lock (dataLock)
+                                _suspendConsole = false;
+                        }
+                        else if (message.StartsWith("writeram "))
+                        {
+                            string[] args = message.Split(' ');
+
+                            if (args.Length > 1)
+                                WriteRAMFromFile(args[1]);
+                        }
+                        else if (stringComparer.Equals("mergerbydex", message) || stringComparer.Equals("mrby", message))
+                        {
+                            MergePokedexRBY();
+                        }
+                        else if (stringComparer.Equals("quit", message) || stringComparer.Equals("q", message))
+                        {
+                            exitFlag = true;
+                            _continue = false;
+                        }
+                        else if (stringComparer.Equals("tp", message))
+                            TestProgressBar();
+                        else
+                        {
+                            _serialPort.WriteLine(
+                                String.Format("<{0}>: {1}", name, message)
+                                );
+                        }
+                    }
                 }
             }
-        }
+            catch(Exception ex)
+            {
+
+                if(readThread!=null) readThread.Join();
+                _serialPort.Close();
+            }
 
         readThread.Join();
         _serialPort.Close();
@@ -203,7 +241,7 @@ public class PortChat
 
     public static void CancelOperationHandler(object sender, ConsoleCancelEventArgs e)
     {
-        lock(dataLock)
+        lock (dataLock)
             _cancelOperation = true;
     }
 
@@ -250,7 +288,7 @@ public class PortChat
 
         ROM.AddRange(GetBytes(0x0000, 0x4000, false));
 
-        string ROMName = filename==""?System.Text.Encoding.ASCII.GetString(ROM.ToArray(), 0x134, 0x0F):filename;
+        string ROMName = filename == "" ? System.Text.Encoding.ASCII.GetString(ROM.ToArray(), 0x134, 0x0F) : filename;
         if (ROMName.Contains("\0")) ROMName = ROMName.Substring(0, ROMName.IndexOf("\0"));
 
         int BankCount = 2;
@@ -277,7 +315,7 @@ public class PortChat
                     break;
             }
 
-        Console.WriteLine("1 of " + BankCount.ToString());
+        Console.WriteLine("Reading ROM Bank 1 of " + BankCount.ToString());
         for (int i = 1; i != BankCount; ++i)
         {
             if (BankCount > 2)
@@ -292,7 +330,7 @@ public class PortChat
                 if (_cancelOperation)
                     break;
 
-            Console.WriteLine("{0} of {1}", i + 1, BankCount);
+            Console.WriteLine("Reading ROM Bank {0} of {1}", i + 1, BankCount);
         }
 
         WriteCommand(0x2100, 0x01, false);
@@ -367,7 +405,7 @@ public class PortChat
         if (System.IO.File.Exists(ROMName + ".sav"))
             System.IO.File.Delete(ROMName + ".sav");
 
-        System.IO.File.WriteAllBytes((!filename.Equals(""))?filename:(ROMName + ".sav"), RAM.ToArray());
+        System.IO.File.WriteAllBytes((!filename.Equals("")) ? filename : (ROMName + ".sav"), RAM.ToArray());
 
         Console.WriteLine("Done!");
 
@@ -386,7 +424,7 @@ public class PortChat
         string ROMName = System.Text.Encoding.ASCII.GetString(Bank0, 0x134, 0x0F).Trim();
         if (ROMName.Contains("\0")) ROMName = ROMName.Substring(0, ROMName.IndexOf("\0"));
 
-        if(!ROMName.Equals("POKEMON RED") && !ROMName.Equals("POKEMON BLUE") && !ROMName.Equals("POKEMON YELLOW") )
+        if (!ROMName.Equals("POKEMON RED") && !ROMName.Equals("POKEMON BLUE") && !ROMName.Equals("POKEMON YELLOW"))
         {
             Console.WriteLine("This function must be used with a Gen 1 North American Pokemon game");
             return;
@@ -436,7 +474,7 @@ public class PortChat
 
         byte checksum = GenerateGen1Bank1Checksum(Bank1);
         Console.WriteLine("Recalculated checksum");
-        
+
 
         Thread.Sleep(500);
 
@@ -461,8 +499,8 @@ public class PortChat
     public static byte GenerateGen1Bank1Checksum(byte[] data) // Expects to be given the data of Bank1 only.
     {
         byte checksum = 0;
-        
-        for(int i = 0x0598; i!= 0x1523; ++i)
+
+        for (int i = 0x0598; i != 0x1523; ++i)
             checksum += data[i];
 
         return (byte)~checksum;
@@ -482,7 +520,7 @@ public class PortChat
         int percInt = (int)(percent * (double)(barLength));
         string progressBar = "";
 
-        for (int i = 0; i != (barLength+1); ++i)
+        for (int i = 0; i != (barLength + 1); ++i)
             progressBar += (percInt >= i) ? '█' : ' ';
 
         Console.WriteLine("|{0}|  {1:P}  {2}", progressBar, percent, message);
@@ -564,7 +602,7 @@ public class PortChat
 
 
         DateTime start = DateTime.Now;
-        double currentPercent = 0.0f, totalUnits = RBS*RAMBanks;
+        double currentPercent = 0.0f, totalUnits = RBS * RAMBanks;
 
         Console.WriteLine("\r\nProgress:\r\n\r\n");
         for (int i = 0; i != RAMBanks; ++i)
@@ -580,11 +618,11 @@ public class PortChat
                 WriteCommand((ushort)(0xA000 + j * bufferSize), bytesOut, true);
                 //WriteCommand((ushort)(0xA000 + j), file[i*bufferSize00 + j], true);
 
-                currentPercent = (double)(i*RBS + j) / totalUnits;
+                currentPercent = (double)(i * RBS + j) / totalUnits;
 
                 TimeSpan t = DateTime.Now - start;
                 double secondsPerPercent = t.TotalSeconds / currentPercent;
-                int secondsRemaining = (int)(secondsPerPercent * (1.0-currentPercent));
+                int secondsRemaining = (int)(secondsPerPercent * (1.0 - currentPercent));
                 TimeSpan remaining = TimeSpan.FromSeconds(secondsRemaining);
                 Console.SetCursorPosition(0, Console.CursorTop - 1);
                 ClearCurrentConsoleLine();
@@ -637,7 +675,7 @@ public class PortChat
 
         _serialPort.Write(command, 0, command.Length);
 
-        while(!modeChanged)
+        while (!modeChanged)
         {
             Thread.Sleep(250);
             lock (dataLock)
@@ -647,7 +685,7 @@ public class PortChat
 
     }
 
-        public static void WriteCommand(ushort Address, byte data, bool SRAM)
+    public static void WriteCommand(ushort Address, byte data, bool SRAM)
     {
         bool writeDone = false;
 
@@ -714,7 +752,7 @@ public class PortChat
 
         while (!writeDone)
         {
-            Thread.Sleep(250);
+            //Thread.Sleep(250);
             lock (dataLock)
                 if (ReceivedBytes.Count > 0)
                     writeDone = ReceivedBytes[ReceivedBytes.Count - 1] == 0xFF;
@@ -746,6 +784,7 @@ public class PortChat
 
             }
             catch (TimeoutException) { }
+            catch (System.UnauthorizedAccessException) { _continue = false; }
         }
     }
 }
