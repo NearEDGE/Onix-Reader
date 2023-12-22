@@ -1,6 +1,8 @@
 ﻿using System.IO;
 
-namespace Gen_1_Save_Classes
+using Onix_Gameboy_Cartridge_Reader;
+
+namespace Pokemon_Save_Classes
 {
     internal class Program
     {
@@ -10,12 +12,25 @@ namespace Gen_1_Save_Classes
         {
             PokemonNames = File.ReadAllLines("Gen1 Pokemon Names.txt");
 
+            byte[] data = new byte[0x1000];
+            Array.Copy(File.ReadAllBytes("PM_CRYSTAL.sav"), 0x2000, data, 0, 0x1000);
 
+
+            Gen2SaveFile PKMNSILVER = new Gen2SaveFile("POKEMON_SLVAAXE.sav");
+            Gen2SaveFile PKMNGOLD = new Gen2SaveFile("POKEMON_GLDAAUE.sav");
+            Gen2SaveFile PKMNCRYSTAL = Gen2SaveFile.FromPrimaryData(data);
+            //Gen2SaveFile PKMNSILVER = new Gen2SaveFile("POKEMON SILVER test.sav");
             //Gen1SaveFile PKMNBLUE = new Gen1SaveFile("POKEMON BLUE.sav");
             //Gen1SaveFile PKMNRED = new Gen1SaveFile("POKEMON RED.sav");
 
+            Console.WriteLine(" Original: {0:X}\r\nGenerated: {1:X}", PKMNCRYSTAL.Checksum, PKMNCRYSTAL.GenerateChecksum());
 
+            PKMNSILVER.MergePokedexData(PKMNGOLD.GetPokedexData());
+            PKMNCRYSTAL.MergePokedexData(PKMNSILVER.GetPokedexData());
 
+            PKMNCRYSTAL.SaveToFile("POKEMON CRYSTAL test.sav");
+
+            /*
             byte[] PokemonOwned = File.ReadAllBytes(@"..\..\..\..\Onix Gameboy Cartridge Reader\bin\Debug\RBYPokedex.dat");
 
 

@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Gen_1_Save_Classes
+namespace Onix_Gameboy_Cartridge_Reader
 {
     internal class Gen1SaveFile
     {
