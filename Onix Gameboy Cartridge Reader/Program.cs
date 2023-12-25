@@ -488,6 +488,11 @@ namespace Onix_Gameboy_Cartridge_Reader
             if(hasRTC)
             {
                 Console.WriteLine("Dumping RTC Registers...");
+
+                //latch RTC Registers
+                WriteCommand(0x6100, 0x00, false);
+                WriteCommand(0x6100, 0x01, false);
+
                 byte[] RTCData = new byte[20];
                 for(byte i = 0x00; i != 0x05; ++i)
                 {
