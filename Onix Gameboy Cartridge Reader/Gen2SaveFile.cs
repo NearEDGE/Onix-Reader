@@ -7,6 +7,8 @@ using System.Threading.Tasks;
 
 namespace Onix_Gameboy_Cartridge_Reader
 {
+
+
     internal class Gen2SaveFile
     {
         byte[] data;
@@ -17,6 +19,17 @@ namespace Onix_Gameboy_Cartridge_Reader
 
         public bool IsCrystal
         {  get { return Crystal; } }
+
+        // {From, To, Length},
+        public static ushort[,] PrimaryToSecondaryInfoGS = 
+        {
+            { 0x2009,  0x15C7,  (ushort)(0x17EC - 0x15C7) },
+            { 0x222F,  0x3D96,  (ushort)(0x3F3F - 0x3D96) },
+            { 0x23D9,  0x0C6B,  (ushort)(0x10E7 - 0x0C6B) },
+            { 0x2856,  0x7E39,  (ushort)(0x7E6C - 0x7E39) },
+            { 0x288A,  0x10E8,  (ushort)(0x15C6 - 0x10E8) },
+            { 0x2D69,  0x7E6D, (ushort)2 }
+        };
 
         public ushort Checksum
         {
@@ -32,6 +45,11 @@ namespace Onix_Gameboy_Cartridge_Reader
             {
                 return (ushort)((data[0x2D6A] << 8) | data[0x2D69]);
             }
+        }
+
+        public ushort PrimarySaveAddress
+        {
+            get { return (ushort)0x2009; }
         }
 
         public ushort PokedexAddress

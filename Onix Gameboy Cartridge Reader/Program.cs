@@ -6,6 +6,9 @@ using System.IO;
 using System.IO.Ports;
 using System.Threading;
 using System.Collections.Generic;
+using Microsoft.Win32;
+using System.Diagnostics;
+using System.Net.NetworkInformation;
 
 namespace Onix_Gameboy_Cartridge_Reader
 {
@@ -163,6 +166,10 @@ namespace Onix_Gameboy_Cartridge_Reader
                             {
                                 DumpRAMToFile();
                             }
+                            else if (message.ToLower().StartsWith("dumpram "))
+                            {
+                                DumpRAMToFile(message.Substring("dumpram ".Length));
+                            }
                             else if (stringComparer.Equals("fulldump", message))
                             {
                                 DumpROMToFile();
@@ -179,42 +186,33 @@ namespace Onix_Gameboy_Cartridge_Reader
                                 string ROMName = System.Text.Encoding.ASCII.GetString(header, 0x134, 0x0F);
                                 if (ROMName.Contains("\0")) ROMName = ROMName.Substring(0, ROMName.IndexOf("\0"));
 
-                                int RAMBankSize = 8, RAMBanks = 1;
-
-                                switch (header[0x149])
-                                {
-                                    case 0x00:
-                                        RAMBankSize = RAMBanks = 0;
-                                        break;
-
-                                    case 0x01:
-                                        RAMBankSize = 2;
-                                        break;
-
-                                    case 0x03:
-                                        RAMBanks = 4;
-                                        break;
-
-                                    case 0x04:
-                                        RAMBanks = 16;
-                                        break;
-
-                                    case 0x05:
-                                        RAMBanks = 8;
-                                        break;
-                                }
-
                                 WriteRAMFromFile(ROMName + ".sav");
+
+                                lock (dataLock)
+                                    _suspendConsole = false;
+                            }
+                            else if (stringComparer.Equals("writeramgsc", message))
+                            {
+
+                                lock (dataLock)
+                                    _suspendConsole = true;
+
+                                byte[] header = GetBytes(0x0000, 0x0200, false);
+
+                                string ROMName = System.Text.Encoding.ASCII.GetString(header, 0x134, 0x0F);
+                                if (ROMName.Contains("\0")) ROMName = ROMName.Substring(0, ROMName.IndexOf("\0"));
+
+                                WriteGSCRAMFromFile(ROMName + ".sav");
 
                                 lock (dataLock)
                                     _suspendConsole = false;
                             }
                             else if (message.StartsWith("writeram "))
                             {
-                                string[] args = message.Split(' ');
+                                string filename = message.Substring("writeram ".Length);
 
-                                if (args.Length > 1)
-                                    WriteRAMFromFile(args[1]);
+                                if(File.Exists(filename))
+                                    WriteRAMFromFile(filename);
                             }
                             else if (stringComparer.Equals("mergerbydex", message) || stringComparer.Equals("mrby", message))
                             {
@@ -231,6 +229,62 @@ namespace Onix_Gameboy_Cartridge_Reader
                             }
                             else if (stringComparer.Equals("tp", message))
                                 TestProgressBar();
+                            else if(message.ToLower().StartsWith("run"))
+                            {
+                                string[] args = message.ToLower().Split(' ');
+
+                                switch (args[1])
+                                {
+                                    case "red":
+                                        if (File.Exists("POKEMON RED.gb"))
+                                            OpenWithDefaultProgram("POKEMON RED.gb");
+                                        else
+                                            Console.WriteLine("ROM not found. It might need to be dumped first");
+                                        break;
+
+                                    case "blue":
+                                        if (File.Exists("POKEMON BLUE.gb"))
+                                            OpenWithDefaultProgram("POKEMON BLUE.gb");
+                                        else
+                                            Console.WriteLine("ROM not found. It might need to be dumped first");
+                                        break;
+
+                                    case "yellow":
+                                        if (File.Exists("POKEMON YELLOW.gb"))
+                                            OpenWithDefaultProgram("POKEMON YELLOW.gb");
+                                        else
+                                            Console.WriteLine("ROM not found. It might need to be dumped first");
+                                        break;
+
+                                    //POKEMON_SLVAAXE  POKEMON_GLDAAUE
+                                    case "gold":
+                                        if (File.Exists("POKEMON_GLDAAUE.gb"))
+                                            OpenWithDefaultProgram("POKEMON_GLDAAUE.gb");
+                                        else if (File.Exists("POKEMON_GLDAAUE.gbc"))
+                                            OpenWithDefaultProgram("POKEMON_GLDAAUE.gbc");
+                                        else
+                                            Console.WriteLine("ROM not found. It might need to be dumped first");
+                                        break;
+
+                                    case "silver":
+                                        if (File.Exists("POKEMON_SLVAAXE.gb"))
+                                            OpenWithDefaultProgram("POKEMON_SLVAAXE.gb");
+                                        else if (File.Exists("POKEMON_SLVAAXE.gbc"))
+                                            OpenWithDefaultProgram("POKEMON_SLVAAXE.gbc");
+                                        else
+                                            Console.WriteLine("ROM not found. It might need to be dumped first");
+                                        break;
+
+                                    case "crystal":
+                                        if (File.Exists("PM_CRYSTAL.gb"))
+                                            OpenWithDefaultProgram("PM_CRYSTAL.gb");
+                                        else if (File.Exists("PM_CRYSTAL.gbc"))
+                                            OpenWithDefaultProgram("PM_CRYSTAL.gbc");
+                                        else
+                                            Console.WriteLine("ROM not found. It might need to be dumped first");
+                                        break;
+                                }
+                            }
                             else
                             {
                                 _serialPort.WriteLine(
@@ -243,7 +297,7 @@ namespace Onix_Gameboy_Cartridge_Reader
                 catch (Exception ex)
                 {
 
-                    if (readThread != null) readThread.Join();
+                    if (readThread != null && readThread.ThreadState==System.Threading.ThreadState.Running) readThread.Join();
                     _serialPort.Close();
                 }
 
@@ -358,6 +412,21 @@ namespace Onix_Gameboy_Cartridge_Reader
                 _suspendConsole = false;
         }
 
+        public static void OpenWithDefaultProgram(string path)
+        {
+            Process fileopener = new Process();
+
+            fileopener.StartInfo.FileName = "explorer";
+            fileopener.StartInfo.Arguments = "\"" + path + "\"";
+            fileopener.Start();
+        }
+
+        public static long UnixTimeNow()
+        {
+            var timeSpan = (DateTime.UtcNow - new DateTime(1970, 1, 1, 0, 0, 0));
+            return (long)timeSpan.TotalSeconds;
+        }
+
         public static void DumpRAMToFile(string filename = "")
         {
 
@@ -370,6 +439,8 @@ namespace Onix_Gameboy_Cartridge_Reader
             if (ROMName.Contains("\0")) ROMName = ROMName.Substring(0, ROMName.IndexOf("\0"));
 
             int RAMBankSize = 8, RAMBanks = 1;
+
+            bool hasRTC = Bank0[0x0147] == 0x0F || Bank0[0x0147] == 0x10;
 
             switch (Bank0[0x149])
             {
@@ -396,7 +467,11 @@ namespace Onix_Gameboy_Cartridge_Reader
 
             List<byte> RAM = new List<byte>();
 
-            Console.WriteLine("Dumping RAM to {0}.sav", ROMName);
+            string outFilename = filename.Equals("") ? ROMName + ".sav" : filename;
+            if (!outFilename.ToLower().EndsWith(".sav"))
+                outFilename += ".sav";
+
+            Console.WriteLine("Dumping RAM to {0}", outFilename);
 
             WriteCommand(0x0000, 0x0A, true);
 
@@ -410,14 +485,30 @@ namespace Onix_Gameboy_Cartridge_Reader
                 Console.WriteLine("Read Bank {0} of {1}", i + 1, RAMBanks);
             }
 
+            if(hasRTC)
+            {
+                Console.WriteLine("Dumping RTC Registers...");
+                byte[] RTCData = new byte[20];
+                for(byte i = 0x00; i != 0x05; ++i)
+                {
+                    WriteCommand(0x4100, (byte)(0x08+i), false);
+                    RTCData[i*4] = GetBytes(0xA000, 0x01, true)[0];
+                }
+                RAM.AddRange(RTCData);
+                RAM.AddRange(RTCData);
+                byte[] unixtime = BitConverter.GetBytes(UnixTimeNow());
+                RAM.AddRange(unixtime);
+
+            }
+
             WriteCommand(0x0000, 0x00, false);
 
             //ModeCommand(0x00);
 
-            if (System.IO.File.Exists(ROMName + ".sav"))
-                System.IO.File.Delete(ROMName + ".sav");
+            if (System.IO.File.Exists(outFilename))
+                System.IO.File.Delete(outFilename);
 
-            System.IO.File.WriteAllBytes((!filename.Equals("")) ? filename : (ROMName + ".sav"), RAM.ToArray());
+            System.IO.File.WriteAllBytes(outFilename, RAM.ToArray());
 
             Console.WriteLine("Done!");
 
@@ -705,6 +796,8 @@ namespace Onix_Gameboy_Cartridge_Reader
 
             int RAMBankSize = 8, RAMBanks = 1, bufferSize = 0x40, RBS = RAMBankSize * (0x0400 / bufferSize);
 
+            bool hasRTC = Bank0[0x0147] == 0x0F || Bank0[0x0147] == 0x10;
+
             switch (Bank0[0x149])
             {
                 case 0x00:
@@ -728,7 +821,7 @@ namespace Onix_Gameboy_Cartridge_Reader
                     break;
             }
 
-            Console.WriteLine("\r\nWriting save file to cartridge...");
+            Console.WriteLine("\r\nWriting save file {0} to cartridge...", filename);
 
             List<byte> RAM = new List<byte>();
 
@@ -769,6 +862,7 @@ namespace Onix_Gameboy_Cartridge_Reader
                 //Console.WriteLine("{0} of {1}", i + 1, RAMBanks);
             }
 
+
             TimeSpan elapsed = DateTime.Now - start;
 
             Console.SetCursorPosition(0, Console.CursorTop - 1);
@@ -784,6 +878,173 @@ namespace Onix_Gameboy_Cartridge_Reader
 
             lock (dataLock)
                 _suspendConsole = false;
+        }
+        
+
+        public static void WriteGSCRAMFromFile(string filename)
+        {
+            int[,] GSSaveDataBlocks = new int[,]
+            {
+                { 0x0000, 1176},
+                { 0x0600, 1584},
+                { 0x0C60, 1},
+                { 0x0C68, 2951},
+                { 0x1D04, 4202},
+                { 0x31BA, 3462},
+                { 0x4000, 2},
+                { 0x444E, 6626},
+                { 0x6000, 7792}
+            };
+
+            byte[] file = System.IO.File.ReadAllBytes(filename);
+
+            lock (dataLock)
+                _suspendConsole = true;
+
+            byte[] Bank0 = GetBytes(0x0000, 0x0200, false);
+
+            string ROMName = System.Text.Encoding.ASCII.GetString(Bank0, 0x134, 0x0F);
+            if (ROMName.Contains("\0")) ROMName = ROMName.Substring(0, ROMName.IndexOf("\0"));
+
+            if (!ROMName.Equals("POKEMON_SLVAAXE") && !ROMName.Equals("POKEMON_GLDAAUE") && !ROMName.Equals("PM_CRYSTAL"))
+            {
+                Console.WriteLine("This function must be used with a Gen 2 North American Pokemon game");
+
+
+                lock (dataLock)
+                    _suspendConsole = false;
+                return;
+            }
+
+            int RAMBankSize = 8, RAMBanks = 1, bufferSize = 0x40, RBS = RAMBankSize * (0x0400 / bufferSize);
+
+            switch (Bank0[0x149])
+            {
+                case 0x00:
+                    RAMBankSize = RAMBanks = 0;
+                    break;
+
+                case 0x01:
+                    RAMBankSize = 2;
+                    break;
+
+                case 0x03:
+                    RAMBanks = 4;
+                    break;
+
+                case 0x04:
+                    RAMBanks = 16;
+                    break;
+
+                case 0x05:
+                    RAMBanks = 8;
+                    break;
+            }
+
+            Gen2SaveFile gen2Save = new Gen2SaveFile(file);
+
+            DateTime start = DateTime.Now;
+
+            if(gen2Save.IsCrystal)
+            {
+                Console.WriteLine("\r\nWriting Primary Save data to cartridge...");
+                WriteBlockToBank(gen2Save.Data, 0x2009, (byte)1, (ushort)0xA009, 0x2B83 - 0x2000);
+                WriteBlockToBank(gen2Save.Data, 0x2D0D, (byte)1, (ushort)0xAD0D, 2);
+
+                Console.WriteLine("\r\nWriting Secondary Save data to cartridge...");
+                WriteBlockToBank(gen2Save.Data, 0x2009, (byte)0, (ushort)0xB209, 0x2B83 - 0x2000);
+                WriteBlockToBank(gen2Save.Data, 0x2D0D, (byte)0, (ushort)0xBF0D, 2);
+            }
+            else
+            {
+                Console.WriteLine("\r\nWriting Primary Save data to cartridge...");
+                WriteBlockToBank(gen2Save.Data, 0x2009, (byte)1, (ushort)0xA009, 0x2D6B - 0x2000);
+
+                Console.WriteLine("\r\nWriting Secondary Save data to cartridge...");
+                for (int i = 0; i != Gen2SaveFile.PrimaryToSecondaryInfoGS.GetLength(0); ++i)
+                {
+                    Console.WriteLine("\r\n   Writing Secondary block {0}...", i+1);
+                    ushort startAddr = Gen2SaveFile.PrimaryToSecondaryInfoGS[i, 0],
+                        bankNumber = GetRAMBankNumberFromAddress(Gen2SaveFile.PrimaryToSecondaryInfoGS[i, 1]),
+                        ROMAddr = RemapAddressToRAMArea(Gen2SaveFile.PrimaryToSecondaryInfoGS[i, 1]),
+                        dataLength = Gen2SaveFile.PrimaryToSecondaryInfoGS[i, 2];
+
+                    WriteBlockToBank(gen2Save.Data,
+                        startAddr,
+                        (byte)bankNumber,
+                        ROMAddr,
+                        dataLength);
+                }
+            }
+
+
+            TimeSpan elapsed = DateTime.Now - start;
+            Console.WriteLine("Done! Elapsed time: {0}\r\n", elapsed.ToString(@"mm\:ss"));
+
+            lock (dataLock)
+                _suspendConsole = false;
+        }
+
+        public static void WriteBlockToBank(byte[] data, byte bankNumber, ushort destStartAddress, int length)
+        {
+
+            List<byte> dataSub = new List<byte>(data);
+
+            WriteCommand(0x0000, 0x0A, true);
+
+            byte[] bytesOut;
+
+
+            DateTime start = DateTime.Now;
+            double currentPercent = 0.0f, totalUnits = (double)(Math.Ceiling(data.Length / 64d));
+
+            Console.WriteLine("\r\nProgress:\r\n\r\n");
+
+            //ModeCommand(0x00); // This issue was fixed by pulsing write on the arduino program
+            //Console.WriteLine();
+            WriteCommand(0x4100, bankNumber, true);
+
+            for (ushort j = 0; j != (int)totalUnits; ++j)
+            {
+                 bytesOut = new byte[dataSub.Count<0x40?dataSub.Count:0x40];
+
+                //Console.WriteLine();
+                Array.Copy(data, j*0x40, bytesOut, 0, bytesOut.Length);
+
+                if (dataSub.Count > 0x40) 
+                    dataSub.RemoveRange(0, 0x40);
+
+                WriteCommand((ushort)(destStartAddress + j*0x40), bytesOut, true);
+                //WriteCommand((ushort)(0xA000 + j), file[i*bufferSize00 + j], true);
+
+                currentPercent = (double)j / totalUnits;
+
+                TimeSpan t = DateTime.Now - start;
+                double secondsPerPercent = t.TotalSeconds / currentPercent;
+                int secondsRemaining = (int)(secondsPerPercent * (1.0 - currentPercent));
+                TimeSpan remaining = TimeSpan.FromSeconds(secondsRemaining);
+                Console.SetCursorPosition(0, Console.CursorTop - 1);
+                ClearCurrentConsoleLine();
+                DisplayPercentage(currentPercent, remaining.ToString(@"mm\:ss"));
+            }
+
+            ModeCommand(0x00);
+
+            TimeSpan elapsed = DateTime.Now - start;
+
+            Console.SetCursorPosition(0, Console.CursorTop - 1);
+            ClearCurrentConsoleLine();
+            DisplayPercentage(1.0d);
+
+            WriteCommand(0x0000, 0x00, false);
+        }
+
+        public static void WriteBlockToBank(byte[] data, int sourceStartAddress, byte bankNumber, ushort destStartAddress, int length)
+        {
+            byte[] tmp = new byte[length];
+            Array.Copy(data, sourceStartAddress, tmp, 0, length);
+            WriteBlockToBank(tmp, bankNumber, destStartAddress, length);
+
         }
 
         public static void ReadCommand(ushort Address, ushort numBytes, bool SRAM)
