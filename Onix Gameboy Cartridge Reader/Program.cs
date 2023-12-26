@@ -191,6 +191,22 @@ namespace Onix_Gameboy_Cartridge_Reader
                                 lock (dataLock)
                                     _suspendConsole = false;
                             }
+                            else if (stringComparer.Equals("writeramdiff", message))
+                            {
+
+                                lock (dataLock)
+                                    _suspendConsole = true;
+
+                                byte[] header = GetBytes(0x0000, 0x0200, false);
+
+                                string ROMName = System.Text.Encoding.ASCII.GetString(header, 0x134, 0x0F);
+                                if (ROMName.Contains("\0")) ROMName = ROMName.Substring(0, ROMName.IndexOf("\0"));
+
+                                WriteRAMDIFFFromFile(ROMName + ".sav");
+
+                                lock (dataLock)
+                                    _suspendConsole = false;
+                            }
                             else if (stringComparer.Equals("writeramgsc", message))
                             {
 
@@ -488,6 +504,11 @@ namespace Onix_Gameboy_Cartridge_Reader
             if(hasRTC)
             {
                 Console.WriteLine("Dumping RTC Registers...");
+
+                //latch RTC Registers
+                WriteCommand(0x6100, 0x00, false);
+                WriteCommand(0x6100, 0x01, false);
+
                 byte[] RTCData = new byte[20];
                 for(byte i = 0x00; i != 0x05; ++i)
                 {
@@ -514,6 +535,87 @@ namespace Onix_Gameboy_Cartridge_Reader
 
             lock (dataLock)
                 _suspendConsole = false;
+        }
+
+        public static byte[] DumpRAMToArray(bool ignoreRTC = true)
+        {
+
+            lock (dataLock)
+                _suspendConsole = true;
+
+            byte[] ROMBank0 = GetBytes(0x0000, 0x0200, false);
+
+            string ROMName = System.Text.Encoding.ASCII.GetString(ROMBank0, 0x134, 0x0F);
+            if (ROMName.Contains("\0")) ROMName = ROMName.Substring(0, ROMName.IndexOf("\0"));
+
+            int RAMBankSize = 8, RAMBanks = 1;
+
+            bool hasRTC = ROMBank0[0x0147] == 0x0F || ROMBank0[0x0147] == 0x10;
+
+            switch (ROMBank0[0x149])
+            {
+                case 0x00:
+                    RAMBankSize = RAMBanks = 0;
+                    break;
+
+                case 0x01:
+                    RAMBankSize = 2;
+                    break;
+
+                case 0x03:
+                    RAMBanks = 4;
+                    break;
+
+                case 0x04:
+                    RAMBanks = 16;
+                    break;
+
+                case 0x05:
+                    RAMBanks = 8;
+                    break;
+            }
+
+            List<byte> RAM = new List<byte>();
+
+
+            Console.WriteLine("Dumping RAM...");
+
+            WriteCommand(0x0000, 0x0A, true);
+
+
+            for (byte i = 0; i != RAMBanks; ++i)
+            {
+                //ModeCommand(0x00);
+                WriteCommand(0x4100, i, false);
+                RAM.AddRange(GetBytes(0xA000, 0x2000, true));
+
+                Console.WriteLine("Read Bank {0} of {1}", i + 1, RAMBanks);
+            }
+
+            if (hasRTC && !ignoreRTC)
+            {
+                Console.WriteLine("Dumping RTC Registers...");
+                byte[] RTCData = new byte[20];
+                for (byte i = 0x00; i != 0x05; ++i)
+                {
+                    WriteCommand(0x4100, (byte)(0x08 + i), false);
+                    RTCData[i * 4] = GetBytes(0xA000, 0x01, true)[0];
+                }
+                RAM.AddRange(RTCData);
+                RAM.AddRange(RTCData);
+                byte[] unixtime = BitConverter.GetBytes(UnixTimeNow());
+                RAM.AddRange(unixtime);
+
+            }
+
+            WriteCommand(0x0000, 0x00, false);
+
+            Console.WriteLine("Done!");
+
+            lock (dataLock)
+                _suspendConsole = false;
+
+            return RAM.ToArray();
         }
 
         public static void MergePokedexRBY()
@@ -874,6 +976,129 @@ namespace Onix_Gameboy_Cartridge_Reader
 
             //System.IO.File.WriteAllBytes(ROMName + ".sav", RAM.ToArray());
 
+            Console.WriteLine("Done! Elapsed time: {0}", elapsed.ToString(@"mm\:ss"));
+
+            lock (dataLock)
+                _suspendConsole = false;
+        }
+
+        public static void WriteRAMDIFFFromFile(string filename)
+        {
+
+            Console.WriteLine("Reading current save");
+
+            byte[] file = System.IO.File.ReadAllBytes(filename);
+
+            lock (dataLock)
+                _suspendConsole = true;
+
+            byte[] Bank0 = GetBytes(0x0000, 0x0200, false);
+
+            string ROMName = System.Text.Encoding.ASCII.GetString(Bank0, 0x134, 0x0F);
+            if (ROMName.Contains("\0")) ROMName = ROMName.Substring(0, ROMName.IndexOf("\0"));
+
+            int RAMBankSize = 8, RAMBanks = 1, bufferSize = 0x40, RBS = RAMBankSize * (0x0400 / bufferSize);
+
+            bool hasRTC = Bank0[0x0147] == 0x0F || Bank0[0x0147] == 0x10;
+
+            switch (Bank0[0x149])
+            {
+                case 0x00:
+                    RAMBankSize = RAMBanks = 0;
+                    break;
+
+                case 0x01:
+                    RAMBankSize = 2;
+                    break;
+
+                case 0x03:
+                    RAMBanks = 4;
+                    break;
+
+                case 0x04:
+                    RAMBanks = 16;
+                    break;
+
+                case 0x05:
+                    RAMBanks = 8;
+                    break;
+            }
+
+
+            DateTime start = DateTime.Now;
+
+            byte[] curSave = DumpRAMToArray();
+
+            if(curSave.Length!=file.Length && file.Length!=(curSave.Length+44) && file.Length!=(curSave.Length+48))
+            {
+                Console.WriteLine("Save size does not match. \r\nAborting.\r\n");
+                return;
+            }
+
+            List<ushort[]> diffList = new List<ushort[]>();
+
+            {
+
+                int blockStart = -1, blockLen = 0;
+                bool inBlock = false;
+
+                for (int i = 0; i != curSave.Length; ++i)
+                    if (inBlock)
+                    { 
+                        if (curSave[i] == file[i])
+                        {
+                            blockLen = i - blockStart;
+                            diffList.Add(new ushort[] { (ushort)blockStart, (ushort)blockLen });
+                            inBlock = false;
+                        }
+                    }
+                    else if (curSave[i] != file[i])
+                    {
+                        inBlock = true;
+                        blockStart = i;
+                    }
+
+                if(inBlock)
+                    diffList.Add(new ushort[] { (ushort)blockStart, (ushort)(curSave.Length-blockStart) });
+            }
+
+            if(diffList.Count == 0)
+            {
+                Console.WriteLine("Nothing to write.\r\nAborting.\r\n");
+
+                TimeSpan elapsed1 = DateTime.Now - start;
+                Console.WriteLine("Done! Elapsed time: {0}", elapsed1.ToString(@"mm\:ss"));
+            }
+
+
+            Console.WriteLine("\r\nWriting save file diffrential {0} to cartridge...", filename);
+
+            List<byte> RAM = new List<byte>();
+
+            WriteCommand(0x0000, 0x0A, true);
+
+            byte[] bytesOut = new byte[bufferSize];
+
+
+            double currentPercent = 0.0f, totalUnits = RBS * RAMBanks;
+
+            Console.WriteLine("\r\nProgress:\r\n\r\n");
+
+            foreach (ushort[] diff in diffList)
+                WriteBlockToBank(file, diff[0], GetRAMBankNumberFromAddress(diff[0]), RemapAddressToRAMArea(diff[0]), diff[1]);
+
+
+            Console.SetCursorPosition(0, Console.CursorTop - 1);
+            ClearCurrentConsoleLine();
+            DisplayPercentage(1.0d);
+
+            WriteCommand(0x0000, 0x00, false);
+
+
+            //System.IO.File.WriteAllBytes(ROMName + ".sav", RAM.ToArray());
+
+
+            TimeSpan elapsed = DateTime.Now - start;
             Console.WriteLine("Done! Elapsed time: {0}", elapsed.ToString(@"mm\:ss"));
 
             lock (dataLock)
