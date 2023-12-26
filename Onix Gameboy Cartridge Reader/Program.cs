@@ -175,7 +175,7 @@ namespace Onix_Gameboy_Cartridge_Reader
                                 DumpROMToFile();
                                 DumpRAMToFile();
                             }
-                            else if (stringComparer.Equals("writeram", message))
+                            else if (stringComparer.Equals("writeramfull", message))
                             {
 
                                 lock (dataLock)
@@ -191,7 +191,7 @@ namespace Onix_Gameboy_Cartridge_Reader
                                 lock (dataLock)
                                     _suspendConsole = false;
                             }
-                            else if (stringComparer.Equals("writeramdiff", message))
+                            else if (stringComparer.Equals("writeram", message))
                             {
 
                                 lock (dataLock)
@@ -202,7 +202,7 @@ namespace Onix_Gameboy_Cartridge_Reader
                                 string ROMName = System.Text.Encoding.ASCII.GetString(header, 0x134, 0x0F);
                                 if (ROMName.Contains("\0")) ROMName = ROMName.Substring(0, ROMName.IndexOf("\0"));
 
-                                WriteRAMDIFFFromFile(ROMName + ".sav");
+                                WriteRAMDiffFromFile(ROMName + ".sav");
 
                                 lock (dataLock)
                                     _suspendConsole = false;
@@ -226,6 +226,13 @@ namespace Onix_Gameboy_Cartridge_Reader
                             else if (message.StartsWith("writeram "))
                             {
                                 string filename = message.Substring("writeram ".Length);
+
+                                if(File.Exists(filename))
+                                    WriteRAMDiffFromFile(filename);
+                            }
+                            else if (message.StartsWith("writeramfull "))
+                            {
+                                string filename = message.Substring("writeramfull ".Length);
 
                                 if(File.Exists(filename))
                                     WriteRAMFromFile(filename);
@@ -540,9 +547,6 @@ namespace Onix_Gameboy_Cartridge_Reader
         public static byte[] DumpRAMToArray(bool ignoreRTC = true)
         {
 
-            lock (dataLock)
-                _suspendConsole = true;
-
             byte[] ROMBank0 = GetBytes(0x0000, 0x0200, false);
 
             string ROMName = System.Text.Encoding.ASCII.GetString(ROMBank0, 0x134, 0x0F);
@@ -611,9 +615,6 @@ namespace Onix_Gameboy_Cartridge_Reader
             WriteCommand(0x0000, 0x00, false);
 
             Console.WriteLine("Done!");
-
-            lock (dataLock)
-                _suspendConsole = false;
 
             return RAM.ToArray();
         }
@@ -982,7 +983,7 @@ namespace Onix_Gameboy_Cartridge_Reader
                 _suspendConsole = false;
         }
 
-        public static void WriteRAMDIFFFromFile(string filename)
+        public static void WriteRAMDiffFromFile(string filename)
         {
 
             Console.WriteLine("Reading current save");
@@ -1037,6 +1038,9 @@ namespace Onix_Gameboy_Cartridge_Reader
 
             List<ushort[]> diffList = new List<ushort[]>();
 
+            double dataSizeOut = 0;
+
+            DateTime writeStart = DateTime.Now;
             {
 
                 int blockStart = -1, blockLen = 0;
@@ -1049,6 +1053,7 @@ namespace Onix_Gameboy_Cartridge_Reader
                         {
                             blockLen = i - blockStart;
                             diffList.Add(new ushort[] { (ushort)blockStart, (ushort)blockLen });
+                            dataSizeOut += blockLen;
                             inBlock = false;
                         }
                     }
@@ -1066,12 +1071,12 @@ namespace Onix_Gameboy_Cartridge_Reader
             {
                 Console.WriteLine("Nothing to write.\r\nAborting.\r\n");
 
-                TimeSpan elapsed1 = DateTime.Now - start;
+                TimeSpan elapsed1 = DateTime.Now - writeStart;
                 Console.WriteLine("Done! Elapsed time: {0}", elapsed1.ToString(@"mm\:ss"));
             }
 
 
-            Console.WriteLine("\r\nWriting save file diffrential {0} to cartridge...", filename);
+            Console.WriteLine("\r\nWriting save file differential from {0} to cartridge...", filename);
 
             List<byte> RAM = new List<byte>();
 
@@ -1080,12 +1085,37 @@ namespace Onix_Gameboy_Cartridge_Reader
             byte[] bytesOut = new byte[bufferSize];
 
 
-            double currentPercent = 0.0f, totalUnits = RBS * RAMBanks;
+            double currentPercent = 0.0f;
 
             Console.WriteLine("\r\nProgress:\r\n\r\n");
 
+            DateTime beginWrite = DateTime.Now;
+            DisplayPercentage(currentPercent);
+
+            double dataSizeWritten = 0;
+
             foreach (ushort[] diff in diffList)
-                WriteBlockToBank(file, diff[0], GetRAMBankNumberFromAddress(diff[0]), RemapAddressToRAMArea(diff[0]), diff[1]);
+            {
+                WriteBlockToBank(file, diff[0], GetRAMBankNumberFromAddress(diff[0]), RemapAddressToRAMArea(diff[0]), diff[1], true);
+                dataSizeWritten += diff[1];
+
+                currentPercent = dataSizeWritten/dataSizeOut;
+
+                TimeSpan t = DateTime.Now - start;
+                double secondsPerByte = t.TotalSeconds / dataSizeWritten;
+                int secondsRemaining = (int)(secondsPerByte * (dataSizeOut-dataSizeWritten));
+                TimeSpan remaining = TimeSpan.FromSeconds(secondsRemaining);
+
+                Console.SetCursorPosition(0, Console.CursorTop - 1);
+                ClearCurrentConsoleLine();
+                DisplayPercentage(currentPercent, remaining.ToString(@"mm\:ss"));
+
+                /*
+                Console.SetCursorPosition(0, Console.CursorTop - 1);
+                ClearCurrentConsoleLine();
+                DisplayPercentage(currentPercent, "Elapsed time: " + (DateTime.Now-beginWrite).ToString(@"mm\:ss"));
+                //*/
+            }
 
 
             Console.SetCursorPosition(0, Console.CursorTop - 1);
@@ -1210,7 +1240,7 @@ namespace Onix_Gameboy_Cartridge_Reader
                 _suspendConsole = false;
         }
 
-        public static void WriteBlockToBank(byte[] data, byte bankNumber, ushort destStartAddress, int length)
+        public static void WriteBlockToBank(byte[] data, byte bankNumber, ushort destStartAddress, int length, bool quiet = false)
         {
 
             List<byte> dataSub = new List<byte>(data);
@@ -1223,7 +1253,8 @@ namespace Onix_Gameboy_Cartridge_Reader
             DateTime start = DateTime.Now;
             double currentPercent = 0.0f, totalUnits = (double)(Math.Ceiling(data.Length / 64d));
 
-            Console.WriteLine("\r\nProgress:\r\n\r\n");
+            if (!quiet) Console.WriteLine("\r\nProgress:\r\n\r\n");
+
 
             //ModeCommand(0x00); // This issue was fixed by pulsing write on the arduino program
             //Console.WriteLine();
@@ -1248,27 +1279,32 @@ namespace Onix_Gameboy_Cartridge_Reader
                 double secondsPerPercent = t.TotalSeconds / currentPercent;
                 int secondsRemaining = (int)(secondsPerPercent * (1.0 - currentPercent));
                 TimeSpan remaining = TimeSpan.FromSeconds(secondsRemaining);
-                Console.SetCursorPosition(0, Console.CursorTop - 1);
-                ClearCurrentConsoleLine();
-                DisplayPercentage(currentPercent, remaining.ToString(@"mm\:ss"));
+                if (!quiet)
+                {
+                    Console.SetCursorPosition(0, Console.CursorTop - 1);
+                    ClearCurrentConsoleLine();
+                    DisplayPercentage(currentPercent, remaining.ToString(@"mm\:ss"));
+                }
             }
 
             ModeCommand(0x00);
 
             TimeSpan elapsed = DateTime.Now - start;
-
-            Console.SetCursorPosition(0, Console.CursorTop - 1);
-            ClearCurrentConsoleLine();
-            DisplayPercentage(1.0d);
+            if (!quiet)
+            {
+                Console.SetCursorPosition(0, Console.CursorTop - 1);
+                ClearCurrentConsoleLine();
+                DisplayPercentage(1.0d);
+            }
 
             WriteCommand(0x0000, 0x00, false);
         }
 
-        public static void WriteBlockToBank(byte[] data, int sourceStartAddress, byte bankNumber, ushort destStartAddress, int length)
+        public static void WriteBlockToBank(byte[] data, int sourceStartAddress, byte bankNumber, ushort destStartAddress, int length, bool quiet = false)
         {
             byte[] tmp = new byte[length];
             Array.Copy(data, sourceStartAddress, tmp, 0, length);
-            WriteBlockToBank(tmp, bankNumber, destStartAddress, length);
+            WriteBlockToBank(tmp, bankNumber, destStartAddress, length, quiet);
 
         }
 
