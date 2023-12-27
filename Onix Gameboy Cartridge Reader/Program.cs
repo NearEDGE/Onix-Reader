@@ -24,6 +24,8 @@ namespace Onix_Gameboy_Cartridge_Reader
         static byte[] GSCPokedex = new byte[0x40];
         static string GSCPokedexFile = "GSCPokedex.dat";
 
+        static List<string[]> LottoData = new List<string[]>();
+
 
         public static void Main()
         {
@@ -33,6 +35,13 @@ namespace Onix_Gameboy_Cartridge_Reader
             string message;
             StringComparer stringComparer = StringComparer.OrdinalIgnoreCase;
             Thread readThread = default;
+
+            {
+                string[] lines = File.ReadAllLines("PokemonLottoData.txt");
+                foreach (string line in lines)
+                    //Game|TID No.|Alt Pokemon ID's...
+                    LottoData.Add(line.Split('|'));
+            }
 
             while (!exitFlag)
                 try
@@ -715,6 +724,99 @@ namespace Onix_Gameboy_Cartridge_Reader
             return (ushort)(0xA000 + (addr - 0x2000*GetRAMBankNumberFromAddress(addr)));
         }
 
+        public static void PokeLottoCheck()
+        {
+
+            lock (dataLock)
+                _suspendConsole = true;
+
+            byte[] Bank0 = GetBytes(0x0000, 0x0200, false);
+
+            string ROMName = System.Text.Encoding.ASCII.GetString(Bank0, 0x134, 0x0F).Trim();
+            if (ROMName.Contains("\0")) ROMName = ROMName.Substring(0, ROMName.IndexOf("\0"));
+
+            if (!ROMName.Equals("POKEMON RED") && !ROMName.Equals("POKEMON BLUE") && !ROMName.Equals("POKEMON YELLOW") && !ROMName.Equals("POKEMON_SLVAAXE") && !ROMName.Equals("POKEMON_GLDAAUE") && !ROMName.Equals("PM_CRYSTAL"))
+            {
+                Console.WriteLine("This function must be used with a North American Gameboy/Gameboy Color Pokemon game");
+
+
+                lock (dataLock)
+                    _suspendConsole = false;
+                return;
+            }
+
+            Console.WriteLine("Lottery Check in progress...");
+
+            if(ROMName.Contains("RED") || ROMName.Contains("BLUE") || ROMName.Contains("YELLOW") )
+            {
+
+            }
+
+
+
+            WriteCommand(0x0000, 0x0A, true);
+
+            WriteCommand(0x4100, 1, false);
+
+            byte[] primary = GetBytes(0xA000, 0x1000, true);
+            Console.WriteLine("Read Primary Save");
+
+            Gen2SaveFile saveFile = Gen2SaveFile.FromPrimaryData(primary);
+
+            Console.WriteLine("Save file is {0}", saveFile.IsCrystal ? "Crystal" : "Gold/Silver");
+
+            byte[] savePokedex = saveFile.GetPokedexData();
+
+            //for (int i = 0; i != 0x40; ++i)
+            //        GSCPokedex[i] |= savePokedex[0x05A3 + i];
+            saveFile.MergePokedexData(GSCPokedex);
+
+            GSCPokedex = saveFile.GetPokedexData();
+
+            Console.WriteLine("Merged with local Pokedex");
+
+            saveFile.UpdateChecksum();
+            Console.WriteLine("Recalculated checksum");
+
+            byte[] checksum = new byte[2];
+
+            Array.Copy(saveFile.Data, saveFile.ChecksumAddress, checksum, 0, 2);
+
+            Thread.Sleep(500);
+
+            WriteCommand((ushort)(0xA000 + saveFile.PokedexAddress - 0x2000), GSCPokedex, true);
+            Console.WriteLine("Written merged Pokedex to cartridge Primary Save");
+
+            WriteCommand((ushort)(0xA000 + saveFile.ChecksumAddress - 0x2000), checksum, true);
+            Console.WriteLine("Updated cartridge Primary Checksum");
+
+
+
+            WriteCommand(0x4100, GetRAMBankNumberFromAddress(saveFile.PokedexSecondaryAddress), false);
+            Thread.Sleep(100);
+
+            WriteCommand(RemapAddressToRAMArea(saveFile.PokedexSecondaryAddress), GSCPokedex, true);
+            Console.WriteLine("Written merged Pokedex to cartridge Secondary Save");
+
+
+            WriteCommand(0x4100, GetRAMBankNumberFromAddress(saveFile.ChecksumSecondaryAddress), false);
+            Thread.Sleep(100);
+
+            WriteCommand(RemapAddressToRAMArea((ushort)(saveFile.ChecksumSecondaryAddress)), checksum, true);
+            Console.WriteLine("Updated cartridge Secondary Checksum");
+
+            ModeCommand(0x00);
+
+            WriteCommand(0x0000, 0x00, false);
+
+            File.WriteAllBytes(GSCPokedexFile, GSCPokedex);
+
+            Console.WriteLine("Done!\r\n");
+
+            lock (dataLock)
+                _suspendConsole = false;
+        }
+
         public static void MergePokedexGSC()
         {
 
@@ -734,31 +836,6 @@ namespace Onix_Gameboy_Cartridge_Reader
                 lock (dataLock)
                     _suspendConsole = false;
                 return;
-            }
-
-            int RAMBankSize = 8, RAMBanks = 1;
-
-            switch (Bank0[0x149])
-            {
-                case 0x00:
-                    RAMBankSize = RAMBanks = 0;
-                    break;
-
-                case 0x01:
-                    RAMBankSize = 2;
-                    break;
-
-                case 0x03:
-                    RAMBanks = 4;
-                    break;
-
-                case 0x04:
-                    RAMBanks = 16;
-                    break;
-
-                case 0x05:
-                    RAMBanks = 8;
-                    break;
             }
 
             Console.WriteLine("Pokedex merge starting...");
