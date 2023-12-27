@@ -2,6 +2,7 @@
 // Replace the code in Program.cs with this code.
 
 using System;
+using System.Buffers.Binary;
 using System.IO;
 using System.IO.Ports;
 using System.Threading;
@@ -9,6 +10,7 @@ using System.Collections.Generic;
 using Microsoft.Win32;
 using System.Diagnostics;
 using System.Net.NetworkInformation;
+using System.Runtime.InteropServices;
 
 namespace Onix_Gameboy_Cartridge_Reader
 {
@@ -23,6 +25,7 @@ namespace Onix_Gameboy_Cartridge_Reader
 
         static byte[] GSCPokedex = new byte[0x40];
         static string GSCPokedexFile = "GSCPokedex.dat";
+        static string[] Gen1Names = File.ReadAllLines("PokemonIndexListGenI.txt");
 
         static List<string[]> LottoData = new List<string[]>();
 
@@ -36,6 +39,7 @@ namespace Onix_Gameboy_Cartridge_Reader
             StringComparer stringComparer = StringComparer.OrdinalIgnoreCase;
             Thread readThread = default;
 
+            if(File.Exists("PokemonLottoData.txt"))
             {
                 string[] lines = File.ReadAllLines("PokemonLottoData.txt");
                 foreach (string line in lines)
@@ -253,6 +257,10 @@ namespace Onix_Gameboy_Cartridge_Reader
                             else if (stringComparer.Equals("mergegscdex", message) || stringComparer.Equals("mgsc", message))
                             {
                                 MergePokedexGSC();
+                            }
+                            else if (stringComparer.Equals("lottocheck", message) || stringComparer.Equals("lc", message))
+                            {
+                                PokeLottoCheck();
                             }
                             else if (stringComparer.Equals("quit", message) || stringComparer.Equals("q", message))
                             {
@@ -730,9 +738,9 @@ namespace Onix_Gameboy_Cartridge_Reader
             lock (dataLock)
                 _suspendConsole = true;
 
-            byte[] Bank0 = GetBytes(0x0000, 0x0200, false);
+            byte[] header = GetBytes(0x0000, 0x0200, false);
 
-            string ROMName = System.Text.Encoding.ASCII.GetString(Bank0, 0x134, 0x0F).Trim();
+            string ROMName = System.Text.Encoding.ASCII.GetString(header, 0x134, 0x0F).Trim();
             if (ROMName.Contains("\0")) ROMName = ROMName.Substring(0, ROMName.IndexOf("\0"));
 
             if (!ROMName.Equals("POKEMON RED") && !ROMName.Equals("POKEMON BLUE") && !ROMName.Equals("POKEMON YELLOW") && !ROMName.Equals("POKEMON_SLVAAXE") && !ROMName.Equals("POKEMON_GLDAAUE") && !ROMName.Equals("PM_CRYSTAL"))
@@ -747,69 +755,207 @@ namespace Onix_Gameboy_Cartridge_Reader
 
             Console.WriteLine("Lottery Check in progress...");
 
-            if(ROMName.Contains("RED") || ROMName.Contains("BLUE") || ROMName.Contains("YELLOW") )
+            //WriteCommand(0x4100, 1, false);
+
+            byte[] save = DumpRAMToArray();
+
+            bool doLottoCheck = false;
+
+            string currentLottoNumber = "00000";
+
+            if (ROMName.Contains("RED") || ROMName.Contains("BLUE") || ROMName.Contains("YELLOW") )
             {
+                List<ushort> FoundIDs = new List<ushort>();
+
+                //Check the trainer ID first
+                ushort tid = BinaryPrimitives.ReverseEndianness(BitConverter.ToUInt16(save, 0x2605));
+                FoundIDs.Add(tid);
+                Console.WriteLine("Trainer ID: {0}", tid.ToString().PadLeft(5, '0'));
+
+                Console.WriteLine("Checking party pokemon...");
+                //Next, check the party Pokemon
+                {
+                    ushort partyDataAddr = 0x2F2C;
+
+                    for (int i = 0; i != save[partyDataAddr]; ++i)
+                    {
+                        PokemonDataGen1 partyPokemon = PokemonDataGen1.PokemonDataFromData(save, partyDataAddr + 8 + 0x2C * i, false);
+                        //Console.Write("{0} ", Gen1Names[partyPokemon.SpeciesID]);
+                        if (partyPokemon.OTID != tid)
+                            if (!FoundIDs.Contains(partyPokemon.OTID))
+                            {
+                                FoundIDs.Add(partyPokemon.OTID);
+                                Console.WriteLine("\r\n   Found ID: {0}", partyPokemon.OTID.ToString().PadLeft(5, '0'));
+                            }
+                    }
+                }
+
+                //Finally, check the boxed Pokemon
+                {
+                    ushort currentBox = 0x30C0,
+                        boxGroup1 = 0x4000, 
+                        boxGroup2 = 0x6000; //6 boxes each, 0x0462 in size each
+
+                    int currentBoxIndex = save[0x284C] & 0x7F;
+
+                    Console.WriteLine("Checking boxed pokemon...");
+
+                    for (int b = 0; b != 6; ++b) //for each box...
+                    {
+                        if (b == currentBoxIndex)
+                        {
+                            int boxCount = save[currentBox];
+                            for (int i = 0; i != boxCount; ++i) //for each pokemon in the current box
+                            {   //                                                                        current box pokemon data   + index of current Pokemon
+                                PokemonDataGen1 boxPokemon = PokemonDataGen1.PokemonDataFromData(save, (currentBox + 0x16) + i * 0x21, true);
+                                //Console.Write("{0} ", Gen1Names[boxPokemon.SpeciesID]);
+                                if (boxPokemon.OTID != tid)
+                                    if (!FoundIDs.Contains(boxPokemon.OTID))
+                                    {
+                                        FoundIDs.Add(boxPokemon.OTID);
+                                        Console.WriteLine("\r\n   Found ID: {0}", boxPokemon.OTID.ToString().PadLeft(5, '0'));
+                                    }
+                            }
+
+                        }
+                        else
+                        {
+                            int boxCount = save[boxGroup1 + b * 0x0462];
+                            for (int i = 0; i != boxCount; ++i) //for each pokemon in the current box
+                            {   //                                                                        current box pokemon data   + index of current Pokemon
+                                PokemonDataGen1 boxPokemon = PokemonDataGen1.PokemonDataFromData(save, (boxGroup1 + (b * 0x0462) + 0x16) + i * 0x21, true);
+                                //Console.Write("{0} ", Gen1Names[boxPokemon.SpeciesID]);
+                                if (boxPokemon.OTID != tid)
+                                    if (!FoundIDs.Contains(boxPokemon.OTID))
+                                    {
+                                        FoundIDs.Add(boxPokemon.OTID);
+                                        Console.WriteLine("\r\n   Found ID: {0}", boxPokemon.OTID.ToString().PadLeft(5, '0'));
+                                    }
+                            }
+                        }
+                        Console.WriteLine("Checked Box {0}", 1 + b);
+                    }
+
+                    for (int b = 0; b != 6; ++b) //for each box...
+                    {
+                        if ((b+6) == currentBoxIndex)
+                        {
+                            int boxCount = save[currentBox];
+                            for (int i = 0; i != boxCount; ++i) //for each pokemon in the current box
+                            {   //                                                                        current box pokemon data   + index of current Pokemon
+                                PokemonDataGen1 boxPokemon = PokemonDataGen1.PokemonDataFromData(save, (currentBox + 0x16) + i * 0x21, true);
+                                //Console.Write("{0} ", Gen1Names[boxPokemon.SpeciesID]);
+                                if (boxPokemon.OTID != tid)
+                                    if (!FoundIDs.Contains(boxPokemon.OTID))
+                                    {
+                                        FoundIDs.Add(boxPokemon.OTID);
+                                        Console.WriteLine("\r\n   Found ID: {0}", boxPokemon.OTID.ToString().PadLeft(5, '0'));
+                                    }
+                            }
+
+                        }
+                        else
+                        {
+                            int boxCount = save[boxGroup2 + b * 0x0462];
+                            for (int i = 0; i != boxCount; ++i) //for each pokemon in the current box
+                            {   //                                                                        current box pokemon data   + index of current Pokemon
+                                PokemonDataGen1 boxPokemon = PokemonDataGen1.PokemonDataFromData(save, (boxGroup2 + (b * 0x0462) + 0x16) + i * 0x21, true);
+                                //Console.Write("{0} ", Gen1Names[boxPokemon.SpeciesID]);
+                                if (boxPokemon.OTID != tid)
+                                    if (!FoundIDs.Contains(boxPokemon.OTID))
+                                    {
+                                        FoundIDs.Add(boxPokemon.OTID);
+                                        Console.WriteLine("\r\n   Found ID: {0}", boxPokemon.OTID.ToString().PadLeft(5, '0'));
+                                    }
+                            }
+                        }
+                        Console.WriteLine("Checked Box {0}", 1 + b);
+                    }
+            }
+
+                foreach (string[] game in LottoData)
+                    if (ushort.Parse(game[1]) == tid)
+                    {
+                        LottoData.Remove(game);
+                        break;
+                    }
+
+                List<string> output = new List<string>();
+
+                output.Add(ROMName.Replace("POKEMON ", "")); 
+                foreach (ushort id in FoundIDs)
+                    output.Add(id.ToString().PadLeft(5, '0'));
+
+                LottoData.Add(output.ToArray());
+            }
+            else
+            {
+                doLottoCheck = true;
+                ushort tid = BitConverter.ToUInt16(save, 0x2009);
+
+
+
 
             }
 
+            //Lotto check!
+            if(doLottoCheck)
+            {
+                int maxMatchStrength = 0;
+                string matchID = "";
+                string[] matchingGame = new string[2] { "None", "" };
+
+                foreach (string[] game in LottoData)
+                {
+                    if (game[1].Equals(matchID))
+                        matchingGame = game;
+
+                    if(maxMatchStrength!=5)
+                        for (int i = 2; i != game.Length; ++i)
+                        {
+                            int matchStrength = 0;
+
+                            if (game[i][4] == currentLottoNumber[4])
+                            {
+                                for (int j = 4; j != -1; --j)
+                                    if (game[i][j] == currentLottoNumber[j])
+                                        ++matchStrength;
+
+                                if (matchStrength > maxMatchStrength)
+                                {
+                                    maxMatchStrength = matchStrength;
+                                    matchID = game[i];
 
 
-            WriteCommand(0x0000, 0x0A, true);
+                                    if (matchStrength == 5)
+                                        break;
+                                }
+                            }
+                        }
+                }
 
-            WriteCommand(0x4100, 1, false);
-
-            byte[] primary = GetBytes(0xA000, 0x1000, true);
-            Console.WriteLine("Read Primary Save");
-
-            Gen2SaveFile saveFile = Gen2SaveFile.FromPrimaryData(primary);
-
-            Console.WriteLine("Save file is {0}", saveFile.IsCrystal ? "Crystal" : "Gold/Silver");
-
-            byte[] savePokedex = saveFile.GetPokedexData();
-
-            //for (int i = 0; i != 0x40; ++i)
-            //        GSCPokedex[i] |= savePokedex[0x05A3 + i];
-            saveFile.MergePokedexData(GSCPokedex);
-
-            GSCPokedex = saveFile.GetPokedexData();
-
-            Console.WriteLine("Merged with local Pokedex");
-
-            saveFile.UpdateChecksum();
-            Console.WriteLine("Recalculated checksum");
-
-            byte[] checksum = new byte[2];
-
-            Array.Copy(saveFile.Data, saveFile.ChecksumAddress, checksum, 0, 2);
-
-            Thread.Sleep(500);
-
-            WriteCommand((ushort)(0xA000 + saveFile.PokedexAddress - 0x2000), GSCPokedex, true);
-            Console.WriteLine("Written merged Pokedex to cartridge Primary Save");
-
-            WriteCommand((ushort)(0xA000 + saveFile.ChecksumAddress - 0x2000), checksum, true);
-            Console.WriteLine("Updated cartridge Primary Checksum");
+                if (matchingGame[1].Equals(matchID))
+                    Console.WriteLine(maxMatchStrength == 5 ? "{0} Trainer ID {1} is a perfect match!!!" : "{0} Trainer ID {1} matches lotto by {2} digits!", matchingGame[0], matchingGame[1], maxMatchStrength);
+                else if (maxMatchStrength > 0)
+                    Console.WriteLine(maxMatchStrength == 5 ? "{0} Trainer ID {1} has a POkemon that is a perfect match!!!" : "{0} Trainer ID {1} has a POkemon that matches lotto by {2} digits!", matchingGame[0], matchingGame[1], maxMatchStrength);
+                else
+                    Console.WriteLine("No matches found!");
 
 
+            }
 
-            WriteCommand(0x4100, GetRAMBankNumberFromAddress(saveFile.PokedexSecondaryAddress), false);
-            Thread.Sleep(100);
+            string[] lottoDataFileOut = new string[LottoData.Count];
 
-            WriteCommand(RemapAddressToRAMArea(saveFile.PokedexSecondaryAddress), GSCPokedex, true);
-            Console.WriteLine("Written merged Pokedex to cartridge Secondary Save");
+            for(int i = 0;i!=LottoData.Count;++i)
+            {
+                string line = "";
+                foreach (string s in LottoData[i])
+                    line += s + "|";
+                line = line.Remove(line.Length - 1);
+                lottoDataFileOut[i] = line;
+            }
 
-
-            WriteCommand(0x4100, GetRAMBankNumberFromAddress(saveFile.ChecksumSecondaryAddress), false);
-            Thread.Sleep(100);
-
-            WriteCommand(RemapAddressToRAMArea((ushort)(saveFile.ChecksumSecondaryAddress)), checksum, true);
-            Console.WriteLine("Updated cartridge Secondary Checksum");
-
-            ModeCommand(0x00);
-
-            WriteCommand(0x0000, 0x00, false);
-
-            File.WriteAllBytes(GSCPokedexFile, GSCPokedex);
+            File.WriteAllLines("PokemonLottoData.txt", lottoDataFileOut);
 
             Console.WriteLine("Done!\r\n");
 
