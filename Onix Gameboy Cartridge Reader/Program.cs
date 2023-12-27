@@ -1043,24 +1043,26 @@ namespace Onix_Gameboy_Cartridge_Reader
             DateTime writeStart = DateTime.Now;
             {
 
-                int blockStart = -1, blockLen = 0;
+                int blockStart = -1, blockLen = 0, lastMismatch = 0;
                 bool inBlock = false;
 
                 for (int i = 0; i != curSave.Length; ++i)
                     if (inBlock)
-                    { 
-                        if (curSave[i] == file[i])
+                    {
+                        if (curSave[i] == file[i] && (i - lastMismatch) > 7)
                         {
                             blockLen = i - blockStart;
                             diffList.Add(new ushort[] { (ushort)blockStart, (ushort)blockLen });
                             dataSizeOut += blockLen;
                             inBlock = false;
                         }
+                        else
+                            lastMismatch = i;
                     }
                     else if (curSave[i] != file[i])
                     {
                         inBlock = true;
-                        blockStart = i;
+                        blockStart = lastMismatch = i;
                     }
 
                 if(inBlock)
