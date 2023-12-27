@@ -833,7 +833,7 @@ namespace Onix_Gameboy_Cartridge_Reader
                                     }
                             }
                         }
-                        Console.WriteLine("Checked Box {0}", 1 + b);
+                        Console.WriteLine("Checked Box {0}", 7 + b);
                     }
 
                     for (int b = 0; b != 6; ++b) //for each box...
