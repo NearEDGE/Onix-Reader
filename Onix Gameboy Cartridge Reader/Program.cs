@@ -26,6 +26,7 @@ namespace Onix_Gameboy_Cartridge_Reader
         static byte[] GSCPokedex = new byte[0x40];
         static string GSCPokedexFile = "GSCPokedex.dat";
         static string[] Gen1Names = File.ReadAllLines("PokemonIndexListGenI.txt");
+        static string[] PokemonNames = File.ReadAllLines("Pokemon Names Gen 1 - 9.txt");
 
         static List<string[]> LottoData = new List<string[]>();
 
@@ -732,18 +733,30 @@ namespace Onix_Gameboy_Cartridge_Reader
             return (ushort)(0xA000 + (addr - 0x2000*GetRAMBankNumberFromAddress(addr)));
         }
 
+        public static byte[] ArraySub(byte[] data, int start, int len)
+        {
+            byte[] ret = new byte[len];
+
+            Array.Copy(data, start, ret, 0, len);
+
+            return ret;
+        }
+
         public static void PokeLottoCheck()
         {
 
             lock (dataLock)
                 _suspendConsole = true;
 
+            //byte[] save = File.ReadAllBytes("POKEMON_SLVAAXE.sav");
+            //byte[] header = ArraySub(File.ReadAllBytes("POKEMON_SLVAAXE.gb"), 0, 0x200);
             byte[] header = GetBytes(0x0000, 0x0200, false);
 
             string ROMName = System.Text.Encoding.ASCII.GetString(header, 0x134, 0x0F).Trim();
             if (ROMName.Contains("\0")) ROMName = ROMName.Substring(0, ROMName.IndexOf("\0"));
 
-            if (!ROMName.Equals("POKEMON RED") && !ROMName.Equals("POKEMON BLUE") && !ROMName.Equals("POKEMON YELLOW") && !ROMName.Equals("POKEMON_SLVAAXE") && !ROMName.Equals("POKEMON_GLDAAUE") && !ROMName.Equals("PM_CRYSTAL"))
+            if (!ROMName.Equals("POKEMON RED") && !ROMName.Equals("POKEMON BLUE") && !ROMName.Equals("POKEMON YELLOW") && 
+                !ROMName.Equals("POKEMON_SLVAAXE") && !ROMName.Equals("POKEMON_GLDAAUE") && !ROMName.Equals("PM_CRYSTAL"))
             {
                 Console.WriteLine("This function must be used with a North American Gameboy/Gameboy Color Pokemon game");
 
@@ -890,17 +903,74 @@ namespace Onix_Gameboy_Cartridge_Reader
             }
             else
             {
+                List<int> FoundIDs = new List<int>();
+
                 doLottoCheck = true;
-                ushort tid = BitConverter.ToUInt16(save, 0x2009);
+                Gen2SaveFile gen2Save = new Gen2SaveFile(save);
+
+                string gameFriendlyName = "";
+
+                if (ROMName.Contains("AAXE"))
+                    gameFriendlyName = "SILVER";
+                else if (ROMName.Contains("AAUE"))
+                    gameFriendlyName = "GOLD";
+                else 
+                    gameFriendlyName = ROMName.Substring(3);
+
+                currentLottoNumber = gen2Save.LottoNumber.ToString().PadLeft(5, '0');
+
+                FoundIDs.Add(gen2Save.TrainerID);
+                Console.WriteLine("Trainer ID: {0}", gen2Save.TrainerID.ToString().PadLeft(5, '0'));
+
+                //Party Pokemon
+                foreach (PokemonDataGen2 pokemon in gen2Save.GetPartyPokemon())
+                    if (!FoundIDs.Contains(pokemon.OTID))
+                    {
+                        FoundIDs.Add(pokemon.OTID);
+                        Console.WriteLine("\r\n   Found ID: {0} - {1}", pokemon.OTID.ToString().PadLeft(5, '0'), PokemonNames[pokemon.SpeciesID - 1]);
+                    }
+
+                Console.Write("Checking box ");
+                for (int i = 0; i != 14; ++i)
+                {
+                    Console.Write("{0} ", 1 + i);
+
+                    foreach (PokemonDataGen2 pokemon in gen2Save.GetBoxedPokemon(i))
+                    {
+                        //Console.Write("{0} ", PokemonNames[pokemon.SpeciesID-1]);
+
+                        if (!FoundIDs.Contains(pokemon.OTID))
+                        {
+                            FoundIDs.Add(pokemon.OTID);
+                            Console.WriteLine("\r\n   Found ID: {0} - {1}", pokemon.OTID.ToString().PadLeft(5, '0'), PokemonNames[pokemon.SpeciesID-1]);
+                        }
+
+                    }
+                }
 
 
+                foreach (string[] game in LottoData)
+                    if (ushort.Parse(game[1]) == gen2Save.TrainerID)
+                    {
+                        LottoData.Remove(game);
+                        break;
+                    }
 
+                List<string> output = new List<string>();
+
+                output.Add(gameFriendlyName);
+                foreach (ushort id in FoundIDs)
+                    output.Add(id.ToString().PadLeft(5, '0'));
+
+                LottoData.Add(output.ToArray());
 
             }
 
             //Lotto check!
             if(doLottoCheck)
             {
+                Console.WriteLine("This week's Lucky Number is: {0}", currentLottoNumber);
+
                 int maxMatchStrength = 0;
                 string matchID = "";
                 string[] matchingGame = new string[2] { "None", "" };
@@ -920,11 +990,14 @@ namespace Onix_Gameboy_Cartridge_Reader
                                 for (int j = 4; j != -1; --j)
                                     if (game[i][j] == currentLottoNumber[j])
                                         ++matchStrength;
+                                    else 
+                                        break;
 
                                 if (matchStrength > maxMatchStrength)
                                 {
                                     maxMatchStrength = matchStrength;
                                     matchID = game[i];
+                                    matchingGame = game;
 
 
                                     if (matchStrength == 5)
@@ -935,9 +1008,9 @@ namespace Onix_Gameboy_Cartridge_Reader
                 }
 
                 if (matchingGame[1].Equals(matchID))
-                    Console.WriteLine(maxMatchStrength == 5 ? "{0} Trainer ID {1} is a perfect match!!!" : "{0} Trainer ID {1} matches lotto by {2} digits!", matchingGame[0], matchingGame[1], maxMatchStrength);
+                    Console.WriteLine(maxMatchStrength == 5 ? "\r\n\r\n{0} Trainer ID {1} is a perfect match!!!\r\n" : "\r\n\r\n{0} Trainer ID {1} matches lotto by {2} digits!", matchingGame[0], matchingGame[1], maxMatchStrength);
                 else if (maxMatchStrength > 0)
-                    Console.WriteLine(maxMatchStrength == 5 ? "{0} Trainer ID {1} has a POkemon that is a perfect match!!!" : "{0} Trainer ID {1} has a POkemon that matches lotto by {2} digits!", matchingGame[0], matchingGame[1], maxMatchStrength);
+                    Console.WriteLine(maxMatchStrength == 5 ? "\r\n\r\n{0} Trainer ID {1} has a Pokemon that is a perfect match!!!\r\n   ID No. {3}" : "\r\n\r\n{0} Trainer ID {1} has a Pokemon that matches lotto by {2} digit" + ((maxMatchStrength>1)?"s!":"!") + "\r\n   ID No. {3}", matchingGame[0], matchingGame[1], maxMatchStrength, matchID);
                 else
                     Console.WriteLine("No matches found!");
 
@@ -1272,7 +1345,7 @@ namespace Onix_Gameboy_Cartridge_Reader
                 for (int i = 0; i != curSave.Length; ++i)
                     if (inBlock)
                     {
-                        if (curSave[i] == file[i] && (i - lastMismatch) > 7)
+                        if (curSave[i] == file[i] && (i - lastMismatch) > 4)
                         {
                             blockLen = i - blockStart;
                             diffList.Add(new ushort[] { (ushort)blockStart, (ushort)blockLen });
@@ -1636,7 +1709,7 @@ namespace Onix_Gameboy_Cartridge_Reader
             while (!writeDone)
             {
                 //Thread.Sleep(250);
-                lock (dataLock)
+                    lock (dataLock)
                     if (ReceivedBytes.Count > 0)
                         writeDone = ReceivedBytes[ReceivedBytes.Count - 1] == 0xFF;
             }

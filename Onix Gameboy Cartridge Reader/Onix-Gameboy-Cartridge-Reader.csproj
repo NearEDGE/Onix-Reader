@@ -71,6 +71,7 @@
     <Compile Include="Gen2SaveFile.cs" />
     <Compile Include="PokedexData.cs" />
     <Compile Include="PokemonDataGen1.cs" />
+    <Compile Include="PokemonDataGen2.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
@@ -91,6 +92,9 @@
     </BootstrapperPackage>
   </ItemGroup>
   <ItemGroup>
+    <Content Include="Pokemon Names Gen 1 - 9.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Content Include="PokemonIndexListGenI.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

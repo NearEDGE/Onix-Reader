@@ -7,6 +7,8 @@ using System.Threading.Tasks;
 
 namespace Onix_Gameboy_Cartridge_Reader
 {
+
+
     internal class Gen2SaveFile
     {
         byte[] data;
@@ -17,6 +19,17 @@ namespace Onix_Gameboy_Cartridge_Reader
 
         public bool IsCrystal
         { get { return Crystal; } }
+
+        // {From, To, Length},
+        public static ushort[,] PrimaryToSecondaryInfoGS =
+        {
+            { 0x2009,  0x15C7,  (ushort)(0x17EC - 0x15C7) },
+            { 0x222F,  0x3D96,  (ushort)(0x3F3F - 0x3D96) },
+            { 0x23D9,  0x0C6B,  (ushort)(0x10E7 - 0x0C6B) },
+            { 0x2856,  0x7E39,  (ushort)(0x7E6C - 0x7E39) },
+            { 0x288A,  0x10E8,  (ushort)(0x15C6 - 0x10E8) },
+            { 0x2D69,  0x7E6D, (ushort)2 }
+        };
 
         public ushort Checksum
         {
@@ -32,6 +45,11 @@ namespace Onix_Gameboy_Cartridge_Reader
             {
                 return (ushort)((data[0x2D6A] << 8) | data[0x2D69]);
             }
+        }
+
+        public ushort PrimarySaveAddress
+        {
+            get { return (ushort)0x2009; }
         }
 
         public ushort PokedexAddress
@@ -172,8 +190,7 @@ namespace Onix_Gameboy_Cartridge_Reader
         {
             if (PrimaryValidGS)
             {
-                /*
-                   for (int i = 0; i != 0x10E8 - 0x0C6B; ++i)
+                for (int i = 0; i != 0x10E8 - 0x0C6B; ++i)
                     data[0x0C6B + i] = data[0x23D9 + i];
 
                 for (int i = 0; i != 0x17ED - 0x15C7; ++i)
@@ -190,16 +207,7 @@ namespace Onix_Gameboy_Cartridge_Reader
 
                 //Checksum
                 data[0x7E6D] = data[0x2D69];
-                data[0x7E6E] = data[0x2D6A];//*/
-
-                Array.Copy(data, 0x0C6B, data, 0x23D9, 0x10E8 - 0x0C6B);
-                Array.Copy(data, 0x15C7, data, 0x2009, 0x17ED - 0x15C7);
-                Array.Copy(data, 0x10E8, data, 0x288A, 0x15C7 - 0x10E8);
-                Array.Copy(data, 0x3D96, data, 0x222F, 0x3F40 - 0x3D96);
-                Array.Copy(data, 0x7E39, data, 0x2856, 0x7E6D - 0x7E39);
-
-                //Checksum
-                Array.Copy(data, 0x2D69, data, 0x7E6D, 2);
+                data[0x7E6E] = data[0x2D6A];
             }
 
         }
@@ -208,7 +216,6 @@ namespace Onix_Gameboy_Cartridge_Reader
         {
             if (SecondaryValidGS)
             {
-                /*
                 for (int i = 0; i != 0x10E8 - 0x0C6B; ++i)
                     data[0x23D9 + i] = data[0x0C6B + i];
 
@@ -226,17 +233,7 @@ namespace Onix_Gameboy_Cartridge_Reader
 
                 //Checksum
                 data[0x2D69] = data[0x7E6D];
-                data[0x2D6A] = data[0x7E6E];//*/
-
-
-                Array.Copy(data, 0x0C6B, data, 0x23D9, 0x10E8 - 0x0C6B);
-                Array.Copy(data, 0x15C7, data, 0x2009, 0x17ED - 0x15C7);
-                Array.Copy(data, 0x10E8, data, 0x288A, 0x15C7 - 0x10E8);
-                Array.Copy(data, 0x3D96, data, 0x222F, 0x3F40 - 0x3D96);
-                Array.Copy(data, 0x7E39, data, 0x2856, 0x7E6D - 0x7E39);
-
-                //Checksum
-                Array.Copy(data, 0x7E6D, data, 0x2D69, 2);
+                data[0x2D6A] = data[0x7E6E];
 
             }
             else
@@ -248,13 +245,13 @@ namespace Onix_Gameboy_Cartridge_Reader
         {
             if (PrimaryValidC)
             {
-                //*
+                //0x2009	0x2B82	0x1209	0x1D82
                 for (int i = 0; i != (0x1D82 - 0x1209); ++i)
                     data[0x1209 + i] = data[0x2009 + i];
 
                 //Checksum
                 data[0x1F0D] = data[0x2D0D];
-                data[0x1F0E] = data[0x2D0E];//*/
+                data[0x1F0E] = data[0x2D0E];
             }
         }
 
@@ -262,13 +259,13 @@ namespace Onix_Gameboy_Cartridge_Reader
         {
             if (SecondaryValidC)
             {
-                //*
+                //0x2009	0x2B82	0x1209	0x1D82
                 for (int i = 0; i != (0x1D82 - 0x1209); ++i)
                     data[0x2009 + i] = data[0x1209 + i];
 
                 //Checksum
                 data[0x2D0D] = data[0x1F0D];
-                data[0x2D0E] = data[0x1F0E];//*/
+                data[0x2D0E] = data[0x1F0E];
             }
         }
 
@@ -341,11 +338,8 @@ namespace Onix_Gameboy_Cartridge_Reader
 
         public void SetPokedexData(byte[] pokedexData)
         {
-            /*
             for (int i = 0; i != 0x40; ++i)
-                data[PokedexAddress + i] = pokedexData[i];//*/
-
-            Array.Copy(data, PokedexAddress, pokedexData, 0, 0x40);
+                data[PokedexAddress + i] = pokedexData[i];
         }
 
         public void MergePokedexData(byte[] pokedexData)

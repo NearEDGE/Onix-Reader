@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -80,6 +81,16 @@ namespace Onix_Gameboy_Cartridge_Reader
         public ushort ChecksumC2
         { get { return (ushort)((data[0x1F0E] << 8) | data[0x1F0D]); } }
 
+
+        public ushort TrainerID
+        {
+            get { return BToU16(data, 0x2009); }
+        }
+
+        public ushort LottoNumber
+        {
+            get { return BToU16(data, 0x2851); }
+        }
 
         public bool SecondaryValidGS
         {
@@ -347,5 +358,38 @@ namespace Onix_Gameboy_Cartridge_Reader
             for (int i = 0; i != 0x40; ++i)
                 data[PokedexAddress + i] |= pokedexData[i];
         }
+
+        public PokemonDataGen2[] GetPartyPokemon()
+        {
+            List<PokemonDataGen2> output = new List<PokemonDataGen2>();
+            //GS 0x288A	  C 0x2865	
+            ushort partyAddr = (ushort)(IsCrystal ? 0x2865 : 0x288A);
+
+            for (int i = 0; i != data[partyAddr]; ++i)
+                output.Add(PokemonDataGen2.PokemonDataFromData(data, partyAddr + 8 + (i * 48), false));
+
+            return output.ToArray();
+        }
+
+        public PokemonDataGen2[] GetBoxedPokemon(int boxNumber)
+        {
+            List<PokemonDataGen2> output = new List<PokemonDataGen2>();
+            //GS 0x288A	  C 0x2865	
+            int currentBoxNumer = IsCrystal ? data[0x2700] : data[0x2724];
+            ushort boxAddr = (ushort)(boxNumber == currentBoxNumer ? (IsCrystal?0x2D10:0x2D6C) : 0x4000 + 0x2000*(int)(boxNumber/7) + 0x450*(boxNumber%7));
+
+            for (int i = 0; i != data[boxAddr]; ++i)
+                output.Add(PokemonDataGen2.PokemonDataFromData(data, boxAddr + 22 + (i * 32), true));
+
+            return output.ToArray();
+        }
+
+
+        ushort ushortFromByteArray(byte[] data, int index = 0)
+        {
+            return BinaryPrimitives.ReverseEndianness(BitConverter.ToUInt16(data, index));
+        }
+
+        ushort BToU16(byte[] data, int index = 0) => ushortFromByteArray(data, index);
     }
 }
