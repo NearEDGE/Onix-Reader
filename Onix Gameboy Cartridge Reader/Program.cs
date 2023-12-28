@@ -1345,15 +1345,19 @@ namespace Onix_Gameboy_Cartridge_Reader
                 for (int i = 0; i != curSave.Length; ++i)
                     if (inBlock)
                     {
-                        if (curSave[i] == file[i] && (i - lastMismatch) > 4)
+                        if (curSave[i] == file[i])
                         {
-                            blockLen = i - blockStart;
-                            diffList.Add(new ushort[] { (ushort)blockStart, (ushort)blockLen });
-                            dataSizeOut += blockLen;
-                            inBlock = false;
+                            if ((i - lastMismatch) > 7)
+                            {
+                                blockLen = i - blockStart;
+                                diffList.Add(new ushort[] { (ushort)blockStart, (ushort)blockLen });
+                                dataSizeOut += blockLen;
+                                inBlock = false;
+                            }
                         }
                         else
                             lastMismatch = i;
+            
                     }
                     else if (curSave[i] != file[i])
                     {
