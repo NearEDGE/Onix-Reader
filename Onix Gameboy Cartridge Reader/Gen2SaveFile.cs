@@ -247,8 +247,6 @@ namespace Onix_Gameboy_Cartridge_Reader
                 data[0x2D6A] = data[0x7E6E];
 
             }
-            else
-                ;
 
         }
 
@@ -391,5 +389,23 @@ namespace Onix_Gameboy_Cartridge_Reader
         }
 
         ushort BToU16(byte[] data, int index = 0) => ushortFromByteArray(data, index);
+    }
+
+    static class GoldSilverAddressList
+    {
+        public const ushort Checksum1 = 0x2D69,
+            Checksum2 = 0x7E6D,
+            TrainerID = 0x2009,
+            TimePlayed = 0x2053,
+            FirstPokemonDV = 0x288A + 0x08 + 0x15;
+    }
+
+    static class CrystalAddressList
+    {
+        public const ushort Checksum1 = 0x2D0D,
+            Checksum2 = 0x1F0D,
+            TrainerID = 0x2009,
+            TimePlayed = 0x2054,
+            FirstPokemonDV = 0x2865 + 0x08 + 0x15;
     }
 }

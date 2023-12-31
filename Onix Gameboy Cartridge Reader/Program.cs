@@ -221,22 +221,6 @@ namespace Onix_Gameboy_Cartridge_Reader
                                 lock (dataLock)
                                     _suspendConsole = false;
                             }
-                            else if (stringComparer.Equals("writeramgsc", message))
-                            {
-
-                                lock (dataLock)
-                                    _suspendConsole = true;
-
-                                byte[] header = GetBytes(0x0000, 0x0200, false);
-
-                                string ROMName = System.Text.Encoding.ASCII.GetString(header, 0x134, 0x0F);
-                                if (ROMName.Contains("\0")) ROMName = ROMName.Substring(0, ROMName.IndexOf("\0"));
-
-                                WriteGSCRAMFromFile(ROMName + ".sav");
-
-                                lock (dataLock)
-                                    _suspendConsole = false;
-                            }
                             else if (message.StartsWith("writeram "))
                             {
                                 string filename = message.Substring("writeram ".Length);
@@ -657,31 +641,6 @@ namespace Onix_Gameboy_Cartridge_Reader
                 return;
             }
 
-            int RAMBankSize = 8, RAMBanks = 1;
-
-            switch (Bank0[0x149])
-            {
-                case 0x00:
-                    RAMBankSize = RAMBanks = 0;
-                    break;
-
-                case 0x01:
-                    RAMBankSize = 2;
-                    break;
-
-                case 0x03:
-                    RAMBanks = 4;
-                    break;
-
-                case 0x04:
-                    RAMBanks = 16;
-                    break;
-
-                case 0x05:
-                    RAMBanks = 8;
-                    break;
-            }
-
             List<byte> RAM = new List<byte>();
 
             Console.WriteLine("Pokedex merge starting...");
@@ -742,6 +701,18 @@ namespace Onix_Gameboy_Cartridge_Reader
             return ret;
         }
 
+        public static byte[] GetCurrentSaveFile(string romName)
+        {
+            byte[] ret;
+
+            if (RAMIsDumped(romName))
+                ret = File.ReadAllBytes(romName + ".sav");
+            else
+                ret = DumpRAMToArray();
+
+            return ret;
+        }
+
         public static void PokeLottoCheck()
         {
 
@@ -770,7 +741,7 @@ namespace Onix_Gameboy_Cartridge_Reader
 
             //WriteCommand(0x4100, 1, false);
 
-            byte[] save = DumpRAMToArray();
+            byte[] save = GetCurrentSaveFile(ROMName);
 
             bool doLottoCheck = false;
 
@@ -1279,6 +1250,120 @@ namespace Onix_Gameboy_Cartridge_Reader
                 _suspendConsole = false;
         }
 
+        public static byte[] GetBytesFromSRAMApplyingAddressRemap(ushort address, ushort length)
+        {
+
+            WriteCommand(0x0000, 0x0A, true);
+
+            WriteCommand(0x4100, GetRAMBankNumberFromAddress(address), false);
+            //Thread.Sleep(100);
+            ushort addr = RemapAddressToRAMArea(address);
+            byte[] ret = GetBytes(addr, length, true);
+
+            WriteCommand(0x0000, 0x00, true);
+            return ret;
+        }
+
+        public static byte GetByteFromSRAMApplyingAddressRemap(ushort address)
+        {
+
+            WriteCommand(0x0000, 0x0A, true);
+
+            WriteCommand(0x4100, GetRAMBankNumberFromAddress(address), false);
+            //Thread.Sleep(100);
+            ushort addr = RemapAddressToRAMArea(address);
+            byte[] ret = GetBytes(addr, 1, true);
+
+            WriteCommand(0x0000, 0x00, true);
+            return ret[0];
+        }
+
+        public static bool RAMIsDumped(string romName)
+        {
+            bool ret = false;
+
+            if (File.Exists(romName + ".sav"))
+            {
+                byte[] save = File.ReadAllBytes(romName + ".sav");
+
+                switch (romName)
+                {
+                    case "PM_CRYSTAL":
+                        {
+                            ushort checksum1 = BitConverter.ToUInt16(GetBytesFromSRAMApplyingAddressRemap(CrystalAddressList.Checksum1, 2), 0),
+                                checksum2 = BitConverter.ToUInt16(GetBytesFromSRAMApplyingAddressRemap(CrystalAddressList.Checksum2, 2), 0),
+                                tid = BitConverter.ToUInt16(GetBytesFromSRAMApplyingAddressRemap(CrystalAddressList.TrainerID, 2), 0);
+
+                            uint timePlayed = BitConverter.ToUInt32(GetBytesFromSRAMApplyingAddressRemap(CrystalAddressList.TimePlayed, 4), 0);
+
+                            byte firstPokemonDV = GetByteFromSRAMApplyingAddressRemap(CrystalAddressList.FirstPokemonDV);
+
+
+                            ushort sChecksum1 = BitConverter.ToUInt16(save, CrystalAddressList.Checksum1),
+                            a = BitConverter.ToUInt16(save, CrystalAddressList.Checksum2),
+                            t = BitConverter.ToUInt16(save, CrystalAddressList.TrainerID);
+
+                            uint p = BitConverter.ToUInt32(save, CrystalAddressList.TimePlayed);
+
+                            byte f = save[CrystalAddressList.FirstPokemonDV];
+                            if (checksum1 == sChecksum1 &&
+                                checksum2 == a &&
+                                tid == t &&
+                                timePlayed == p &&
+                                firstPokemonDV == f)
+                                ret = true;
+                        }
+
+                        break;
+
+                    case "POKEMON_SLVAAXE":
+                    case "POKEMON_GLDAAUE":
+                        {
+                            ushort checksum1 = BitConverter.ToUInt16(GetBytesFromSRAMApplyingAddressRemap(GoldSilverAddressList.Checksum1, 2), 0),
+                                checksum2 = BitConverter.ToUInt16(GetBytesFromSRAMApplyingAddressRemap(GoldSilverAddressList.Checksum2, 2), 0),
+                                tid = BitConverter.ToUInt16(GetBytesFromSRAMApplyingAddressRemap(GoldSilverAddressList.TrainerID, 2), 0);
+
+                            uint timePlayed = BitConverter.ToUInt32(GetBytesFromSRAMApplyingAddressRemap(GoldSilverAddressList.TimePlayed, 4), 0);
+
+                            byte firstPokemonDV = GetByteFromSRAMApplyingAddressRemap(GoldSilverAddressList.FirstPokemonDV);
+
+                            if (checksum1 == BitConverter.ToUInt16(save, GoldSilverAddressList.Checksum1) &&
+                                checksum2 == BitConverter.ToUInt16(save, GoldSilverAddressList.Checksum2) &&
+                                tid == BitConverter.ToUInt16(save, GoldSilverAddressList.TrainerID) &&
+                                timePlayed == BitConverter.ToUInt32(save, GoldSilverAddressList.TimePlayed) &&
+                                firstPokemonDV == save[GoldSilverAddressList.FirstPokemonDV])
+                                ret = true;
+                        }
+
+                        break;
+
+                    case "POKEMON RED":
+                    case "POKEMON BLUE":
+                    case "POKEMON YELLOW":
+                        {
+                            byte checksum = GetByteFromSRAMApplyingAddressRemap(0x3523),
+                                firstPokemonDV = GetByteFromSRAMApplyingAddressRemap(0x2F2C + 8 + 0x19);
+
+                            uint timePlayed = (uint)(GetByteFromSRAMApplyingAddressRemap(0x2CED) << 24 |
+                                GetByteFromSRAMApplyingAddressRemap(0x2CEF) << 16 |
+                                GetByteFromSRAMApplyingAddressRemap(0x2CF0) << 8 |
+                                GetByteFromSRAMApplyingAddressRemap(0x2CF1));
+
+                            ushort tid = BitConverter.ToUInt16(GetBytesFromSRAMApplyingAddressRemap(0x2605, 2), 0);
+
+                            if (checksum == save[0x3523] &&
+                                tid == BitConverter.ToUInt16(save, 0x2605) &&
+                                timePlayed == (uint)(save[0x2CED] << 24 | save[0x2CEF] << 16 | save[0x2CF0] << 8 | save[0x2CF1]) &&
+                                firstPokemonDV == save[0x2F2C + 8 + 0x19])
+                                ret = true;
+                        }
+                        break;
+                }
+            }
+
+            return ret;
+        }
+
         public static void WriteRAMDiffFromFile(string filename)
         {
 
@@ -1294,32 +1379,10 @@ namespace Onix_Gameboy_Cartridge_Reader
             string ROMName = System.Text.Encoding.ASCII.GetString(Bank0, 0x134, 0x0F);
             if (ROMName.Contains("\0")) ROMName = ROMName.Substring(0, ROMName.IndexOf("\0"));
 
-            int RAMBankSize = 8, RAMBanks = 1, bufferSize = 0x40, RBS = RAMBankSize * (0x0400 / bufferSize);
+            int bufferSize = 0x40;
 
-            bool hasRTC = Bank0[0x0147] == 0x0F || Bank0[0x0147] == 0x10;
+            //bool hasRTC = Bank0[0x0147] == 0x0F || Bank0[0x0147] == 0x10;
 
-            switch (Bank0[0x149])
-            {
-                case 0x00:
-                    RAMBankSize = RAMBanks = 0;
-                    break;
-
-                case 0x01:
-                    RAMBankSize = 2;
-                    break;
-
-                case 0x03:
-                    RAMBanks = 4;
-                    break;
-
-                case 0x04:
-                    RAMBanks = 16;
-                    break;
-
-                case 0x05:
-                    RAMBanks = 8;
-                    break;
-            }
 
 
             DateTime start = DateTime.Now;
@@ -1437,110 +1500,6 @@ namespace Onix_Gameboy_Cartridge_Reader
                 _suspendConsole = false;
         }
         
-
-        public static void WriteGSCRAMFromFile(string filename)
-        {
-            int[,] GSSaveDataBlocks = new int[,]
-            {
-                { 0x0000, 1176},
-                { 0x0600, 1584},
-                { 0x0C60, 1},
-                { 0x0C68, 2951},
-                { 0x1D04, 4202},
-                { 0x31BA, 3462},
-                { 0x4000, 2},
-                { 0x444E, 6626},
-                { 0x6000, 7792}
-            };
-
-            byte[] file = System.IO.File.ReadAllBytes(filename);
-
-            lock (dataLock)
-                _suspendConsole = true;
-
-            byte[] Bank0 = GetBytes(0x0000, 0x0200, false);
-
-            string ROMName = System.Text.Encoding.ASCII.GetString(Bank0, 0x134, 0x0F);
-            if (ROMName.Contains("\0")) ROMName = ROMName.Substring(0, ROMName.IndexOf("\0"));
-
-            if (!ROMName.Equals("POKEMON_SLVAAXE") && !ROMName.Equals("POKEMON_GLDAAUE") && !ROMName.Equals("PM_CRYSTAL"))
-            {
-                Console.WriteLine("This function must be used with a Gen 2 North American Pokemon game");
-
-
-                lock (dataLock)
-                    _suspendConsole = false;
-                return;
-            }
-
-            int RAMBankSize = 8, RAMBanks = 1, bufferSize = 0x40, RBS = RAMBankSize * (0x0400 / bufferSize);
-
-            switch (Bank0[0x149])
-            {
-                case 0x00:
-                    RAMBankSize = RAMBanks = 0;
-                    break;
-
-                case 0x01:
-                    RAMBankSize = 2;
-                    break;
-
-                case 0x03:
-                    RAMBanks = 4;
-                    break;
-
-                case 0x04:
-                    RAMBanks = 16;
-                    break;
-
-                case 0x05:
-                    RAMBanks = 8;
-                    break;
-            }
-
-            Gen2SaveFile gen2Save = new Gen2SaveFile(file);
-
-            DateTime start = DateTime.Now;
-
-            if(gen2Save.IsCrystal)
-            {
-                Console.WriteLine("\r\nWriting Primary Save data to cartridge...");
-                WriteBlockToBank(gen2Save.Data, 0x2009, (byte)1, (ushort)0xA009, 0x2B83 - 0x2000);
-                WriteBlockToBank(gen2Save.Data, 0x2D0D, (byte)1, (ushort)0xAD0D, 2);
-
-                Console.WriteLine("\r\nWriting Secondary Save data to cartridge...");
-                WriteBlockToBank(gen2Save.Data, 0x2009, (byte)0, (ushort)0xB209, 0x2B83 - 0x2000);
-                WriteBlockToBank(gen2Save.Data, 0x2D0D, (byte)0, (ushort)0xBF0D, 2);
-            }
-            else
-            {
-                Console.WriteLine("\r\nWriting Primary Save data to cartridge...");
-                WriteBlockToBank(gen2Save.Data, 0x2009, (byte)1, (ushort)0xA009, 0x2D6B - 0x2000);
-
-                Console.WriteLine("\r\nWriting Secondary Save data to cartridge...");
-                for (int i = 0; i != Gen2SaveFile.PrimaryToSecondaryInfoGS.GetLength(0); ++i)
-                {
-                    Console.WriteLine("\r\n   Writing Secondary block {0}...", i+1);
-                    ushort startAddr = Gen2SaveFile.PrimaryToSecondaryInfoGS[i, 0],
-                        bankNumber = GetRAMBankNumberFromAddress(Gen2SaveFile.PrimaryToSecondaryInfoGS[i, 1]),
-                        ROMAddr = RemapAddressToRAMArea(Gen2SaveFile.PrimaryToSecondaryInfoGS[i, 1]),
-                        dataLength = Gen2SaveFile.PrimaryToSecondaryInfoGS[i, 2];
-
-                    WriteBlockToBank(gen2Save.Data,
-                        startAddr,
-                        (byte)bankNumber,
-                        ROMAddr,
-                        dataLength);
-                }
-            }
-
-
-            TimeSpan elapsed = DateTime.Now - start;
-            Console.WriteLine("Done! Elapsed time: {0}\r\n", elapsed.ToString(@"mm\:ss"));
-
-            lock (dataLock)
-                _suspendConsole = false;
-        }
 
         public static void WriteBlockToBank(byte[] data, byte bankNumber, ushort destStartAddress, int length, bool quiet = false)
         {
