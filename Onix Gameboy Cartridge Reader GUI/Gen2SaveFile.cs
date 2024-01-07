@@ -19,10 +19,10 @@ namespace Onix_Gameboy_Cartridge_Reader
         ushort PokedexAddr = 0;
 
         public bool IsCrystal
-        { get { return Crystal; } }
+        {  get { return Crystal; } }
 
         // {From, To, Length},
-        public static ushort[,] PrimaryToSecondaryInfoGS =
+        public static ushort[,] PrimaryToSecondaryInfoGS = 
         {
             { 0x2009,  0x15C7,  (ushort)(0x17EC - 0x15C7) },
             { 0x222F,  0x3D96,  (ushort)(0x3F3F - 0x3D96) },
@@ -60,14 +60,14 @@ namespace Onix_Gameboy_Cartridge_Reader
 
         public ushort PokedexSecondaryAddress
         {
-            get { return (ushort)(IsCrystal ? 0x2A27 - (0x2009 - 0x1209) : 0x2A4C - (0x288A - 0x10E8)); }
+            get { return (ushort)(IsCrystal? 0x2A27 - (0x2009 - 0x1209):0x2A4C-(0x288A-0x10E8) ); }
         }
 
         public ushort ChecksumAddress
-        { get { return (ushort)(IsCrystal ? 0x2D0D : 0x2D69); } }
+        { get { return (ushort)(IsCrystal?0x2D0D:0x2D69); } }
 
         public ushort ChecksumSecondaryAddress
-        { get { return (ushort)(IsCrystal ? 0x1F0D : 0x7E6D); } }
+        { get { return (ushort)(IsCrystal?0x1F0D:0x7E6D); } }
 
         public ushort ChecksumGS
         { get { return (ushort)((data[0x2D6A] << 8) | data[0x2D69]); } }
@@ -374,7 +374,7 @@ namespace Onix_Gameboy_Cartridge_Reader
             List<PokemonDataGen2> output = new List<PokemonDataGen2>();
             //GS 0x288A	  C 0x2865	
             int currentBoxNumer = IsCrystal ? data[0x2700] : data[0x2724];
-            ushort boxAddr = (ushort)(boxNumber == currentBoxNumer ? (IsCrystal ? 0x2D10 : 0x2D6C) : 0x4000 + 0x2000 * (int)(boxNumber / 7) + 0x450 * (boxNumber % 7));
+            ushort boxAddr = (ushort)(boxNumber == currentBoxNumer ? (IsCrystal?0x2D10:0x2D6C) : 0x4000 + 0x2000*(int)(boxNumber/7) + 0x450*(boxNumber%7));
 
             for (int i = 0; i != data[boxAddr]; ++i)
                 output.Add(PokemonDataGen2.PokemonDataFromData(data, boxAddr + 22 + (i * 32), true));
