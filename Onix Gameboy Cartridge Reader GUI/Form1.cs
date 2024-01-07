@@ -28,6 +28,7 @@ namespace Onix_Gameboy_Cartridge_Reader_GUI
         public delegate void NotifyActionCompleted();
 
         public delegate void ConnectionFailure();
+        public delegate void ConnectionReady();
 
 
         public NotifyActionInProgress OnNotifyActionInProgress;
@@ -41,6 +42,9 @@ namespace Onix_Gameboy_Cartridge_Reader_GUI
 
         public ConnectionFailure OnConnectionFailure;
         public ConnectionFailure ConnectionFailureHandler;
+
+        public ConnectionReady OnConnectionReady;
+        public ConnectionReady ConnectionReadyHandler;
 
         public UpdateCheckImage OnCheckImageUpdate;
         public UpdateCheckImage UpdateCheckImageHandler;
@@ -95,6 +99,9 @@ namespace Onix_Gameboy_Cartridge_Reader_GUI
             ConnectionFailureHandler += HandleConnectionFailure;
             OnConnectionFailure += () => { BeginInvoke(ConnectionFailureHandler); };
 
+            ConnectionReadyHandler += HandleConnectionReady;
+            OnConnectionReady += () => { BeginInvoke(ConnectionReadyHandler); };
+
             UpdateCheckImageHandler += HandleUpdateCheckImage;
             OnCheckImageUpdate += (Bitmap bitmap) => { BeginInvoke(UpdateCheckImageHandler, bitmap); };
 
@@ -105,6 +112,13 @@ namespace Onix_Gameboy_Cartridge_Reader_GUI
             OnProgressBarIndeterminate += (double percent) => { BeginInvoke(IndeterminateProgressBarHandler, percent); };
 
             Console.SetOut(ConsoleTextBoxWriter);
+        }
+
+        private void HandleConnectionReady()
+        {
+            gbPrimaryActions.Enabled = true;
+            this.Text = "Onix Gameboy Cartridge Reader - [CONNECTED]";
+            WorkInProgress = Task.Run(() => DisplayFullCartInfo());
         }
 
         private void HandleUpdateCheckImage(Bitmap bitmap)
@@ -153,10 +167,12 @@ namespace Onix_Gameboy_Cartridge_Reader_GUI
             readThread = new Thread(ReadSerialTalk);
             gbPrimaryActions.Enabled = false;
             this.Text = "Onix Gameboy Cartridge Reader - [NOT CONNECTED]";
+            connectToToolStripMenuItem.Enabled = true;
         }
 
         private void connectToPortFromContextMenu(object sender, EventArgs e)
         {
+            connectToToolStripMenuItem.Enabled = false;
             string port = ((ToolStripMenuItem)sender).Text;
             ConnectToPort(port);
 
@@ -242,8 +258,10 @@ namespace Onix_Gameboy_Cartridge_Reader_GUI
                 _continue = true;
                 readThread.Start();
 
-                gbPrimaryActions.Enabled = true;
-                this.Text = "Onix Gameboy Cartridge Reader - [CONNECTED]";
+                Thread.Sleep(500);
+
+                
+                WorkInProgress = Task.Run(() => WaitForConnectionToBeReady());
 
                 name = "Self";
             }
@@ -313,6 +331,37 @@ namespace Onix_Gameboy_Cartridge_Reader_GUI
             Array.Copy(buffer, 8, output, 0, len);
 
             return output;
+        }
+
+        private void WaitForConnectionToBeReady()
+        {
+            lock (dataLock)
+            {
+                _suspendInput = true;
+                ReceivedBytes.Clear();
+            }
+
+            
+
+            bool ready = false;
+            while (!ready)
+            {
+                lock (dataLock)
+                    if (ReceivedBytes.Count >= 2)
+                        ready = true;
+                    else
+                        _serialPort.Write(new byte[] { 0x00, 0xFF }, 0, 1);
+
+
+                if (!ready)
+                    Thread.Sleep(1000);
+
+            }
+
+            lock (dataLock)
+                _suspendInput = false;
+            
+            OnConnectionReady();
         }
 
         private void DumpROMToFile(string appendText = "", string filename = "", int banks = 0)
@@ -1901,7 +1950,7 @@ namespace Onix_Gameboy_Cartridge_Reader_GUI
             else
                 romSizeFriendly = ((BankCount * 0x4000) / 1024.0).ToString("0.00") + " KB";
 
-            Console.WriteLine("\r\nROM Name: {0}\r\n" +
+            Console.WriteLine("ROM Name: {0}\r\n" +
                 "Cartridge Type: {1}\r\n" +
                 "Target Platform: {2}\r\n" +
                 "ROM Size: {3}\r\n" +
