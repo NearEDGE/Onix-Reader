@@ -1,4 +1,5 @@
 ﻿using System.IO;
+using System.Text;
 using Microsoft.Win32;
 using Onix_Gameboy_Cartridge_Reader;
 
@@ -8,21 +9,44 @@ namespace Pokemon_Save_Classes
     {
         static string[]? PokemonNames;
 
+        static string[] RegionNames = { "Kanto", "Johto", "Hoenn", "Sinnoh", "Unova", "Kalos", "Alola", "Galar", "Hisui", "Paldea" };
         static int[] GenerationCount = { 151, 251, 386, 493, 649, 721, 809, 898, 905, 1025 };
+
+        static byte[] GSCPokedex = new byte[0x40];
+        static string GSCPokedexFile = @"..\..\..\..\Onix Gameboy Cartridge Reader\bin\Debug\GSCPokedex.dat";
 
         static void Main(string[] args)
         {
+            Console.OutputEncoding = Encoding.UTF8;
+
             PokemonNames = File.ReadAllLines("Pokemon Names Gen 1 - 9.txt");
-            Gen2SaveFile PKMNGOLD = new Gen2SaveFile("POKEMON_GLDAAUE.sav");
-            Gen2SaveFile PKMNSILVER = new Gen2SaveFile("POKEMON_SLVAAXE.sav");
-            Gen2SaveFile PKMNCRYSTAL = new Gen2SaveFile("PM_CRYSTAL.sav");
+            Gen2SaveFile PKMNGOLD = new Gen2SaveFile(@"..\..\..\..\Onix Gameboy Cartridge Reader\bin\Debug\POKEMON_GLDAAUE.sav");
+            Gen2SaveFile PKMNSILVER = new Gen2SaveFile(@"..\..\..\..\Onix Gameboy Cartridge Reader\bin\Debug\POKEMON_SLVAAXE.sav");
+            Gen2SaveFile PKMNCRYSTAL = new Gen2SaveFile(@"..\..\..\..\Onix Gameboy Cartridge Reader\bin\Debug\PM_CRYSTAL.sav");
 
+            if (File.Exists(GSCPokedexFile))
+                GSCPokedex = File.ReadAllBytes(GSCPokedexFile);
 
-            byte[] PokemonOwned = File.ReadAllBytes(@"..\..\..\..\Onix Gameboy Cartridge Reader\bin\Debug\GSCPokedex.dat");
+            PKMNGOLD.MergePokedexData(GSCPokedex);
+            GSCPokedex = PKMNGOLD.GetPokedexData();
 
+            PKMNSILVER.MergePokedexData(GSCPokedex);
+            GSCPokedex = PKMNSILVER.GetPokedexData();
+            
+            PKMNCRYSTAL.MergePokedexData(GSCPokedex);
+            GSCPokedex = PKMNCRYSTAL.GetPokedexData();
+
+            PKMNSILVER.MergePokedexData(GSCPokedex);
+            PKMNGOLD.MergePokedexData(GSCPokedex);
+
+            PKMNSILVER.SaveToFile(@"..\..\..\..\Onix Gameboy Cartridge Reader\bin\Debug\POKEMON_SLVAAXE.sav");
+            PKMNGOLD.SaveToFile(@"..\..\..\..\Onix Gameboy Cartridge Reader\bin\Debug\POKEMON_GLDAAUE.sav");
+            PKMNCRYSTAL.SaveToFile(@"..\..\..\..\Onix Gameboy Cartridge Reader\bin\Debug\PM_CRYSTAL.sav");
+
+            byte[] PokemonOwned = GSCPokedex;
 
             ShowPokemonList(PokemonOwned, 2);
-
+            /*
             Console.WriteLine("\r\n\r\nSave Data Test results:\r\n\r\n");
 
             byte[] SaveFileTest = File.ReadAllBytes("DataTest.sav");
@@ -65,7 +89,7 @@ namespace Pokemon_Save_Classes
 
             File.WriteAllLines("GoldSilverDataBlockListV2.txt", DataBlockList);
 
-            /*
+            //*
             int least = 0;
             int[] indChecks = new int[256];
             int possibleValues = 256;
@@ -162,43 +186,90 @@ namespace Pokemon_Save_Classes
             bool[] output = new bool[GenerationCount[generation-1]];
 
             int len = (int)Math.Ceiling(GenerationCount[generation - 1] / 8.0d);
-            for (int i = 0; i != 0x13; ++i)
-                for (int j = 0; j != 8; ++j)
+            for (int i = 0; i != len; ++i)
+                for (int j = 0; j != 8 && (i * 8 + j)<GenerationCount[generation - 1]; ++j)
                     output[i*8 + j] = ((pokemonOwnedData[i] >> j) & 0x01) == 1;
 
             return output;
         }
 
+        static string RegionNameFromCount(int count)
+        {
+            for (int i = 0; i != GenerationCount.Length; ++i)
+                if (GenerationCount[i] == count)
+                    return RegionNames[i+1];
+
+            return RegionNames[0];
+        }
+
         static void ShowPokemonList(byte[] list, int generation = 1)
         {
+            string extraNotification = "          ";
 
             bool[] PokemonOwnedList = GetPokemonOwnedList(list, generation);
 
             Console.WriteLine("Owned:\r\n");
 
-            int count = 1;
+            int count = 1, countTotal = 0;
 
             for (int i = 0; i != PokemonOwnedList.Length; ++i)
+            {
+
+                if (GenerationCount.Contains(i ) || i == 0)
+                    if (i == 0)
+                        Console.WriteLine("Kanto:\r\n");
+                    else if (i != (GenerationCount[generation - 1]))
+                    {
+                        Console.WriteLine("\r\n\r\n{0}:\r\n", RegionNameFromCount(i));
+                        count = 1;
+                    }
+
                 if (PokemonOwnedList[i])
-                    if (count++ % 5 != 0 )
-                        Console.Write("{0}", PokemonNames[i].PadLeft(20));
-                    else
-                        Console.WriteLine("{0}", PokemonNames[i].PadLeft(20));
+                {
 
-            Console.WriteLine("\r\n\r\n");
-
-            
-
-            Console.WriteLine("Unowned:\r\n");
-
-            count = 1;
-
-            for (int i = 0; i != PokemonOwnedList.Length; ++i)
-                if (!PokemonOwnedList[i])
                     if (count++ % 5 != 0)
                         Console.Write("{0}", PokemonNames[i].PadLeft(20));
                     else
                         Console.WriteLine("{0}", PokemonNames[i].PadLeft(20));
+                    ++countTotal;
+                }
+            }
+
+            if (generation == 2)
+                extraNotification += "Pokemon until all Pokemon Stadium 2 features: " + (150 - countTotal).ToString();
+
+            Console.WriteLine("\r\n\r\nTotal Caught: {0}{1}\r\n\r\n", countTotal, extraNotification);
+
+            
+
+            Console.WriteLine("\r\n\r\nUnowned List\r\n");
+
+            count = 1;
+
+            for (int i = 0; i != PokemonOwnedList.Length; ++i)
+            {
+
+                if (GenerationCount.Contains(i) || i == 0)
+                    if (i == 0)
+                        Console.WriteLine("Kanto:\r\n");
+                    else if (i != (GenerationCount[generation - 1] - 1))
+                    {
+                        Console.WriteLine("\r\n\r\n{0}:\r\n", RegionNameFromCount(i));
+                        count = 1;
+                    }
+
+                if (!PokemonOwnedList[i])
+                {
+
+                    if (count++ % 5 != 0)
+                        Console.Write("{0}", PokemonNames[i].PadLeft(20));
+                    else
+                        Console.WriteLine("{0}", PokemonNames[i].PadLeft(20));
+                    //++countTotal;
+                }
+            }
+
+            Console.WriteLine("\r\n\r\nTotal Remaining: {0}\r\n\r\n", GenerationCount[generation - 1] - countTotal);
 
 
         }
